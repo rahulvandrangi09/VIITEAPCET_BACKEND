@@ -1,0 +1,186 @@
+generator client {
+provider = "prisma-client-js"
+// REMOVED: output   = "../utils/prismaClient.js"
+}
+
+datasource db {
+provider = "postgresql"
+url      = env("DATABASE_URL")
+}
+
+// ====================================================================
+// ENUMS
+// ====================================================================
+
+enum Role {
+STUDENT
+TEACHER
+ADMIN
+}
+
+enum Difficulty {
+EASY     // 1
+MEDIUM   // 2
+HARD     // 3
+}
+
+enum Subject {
+PHYSICS
+CHEMISTRY
+MATHS
+}
+
+enum Stream {
+ENGINEERING
+PHARMACY
+}
+
+enum QualifyingExam {
+INTERMEDIATE_REGULAR
+INTERMEDIATE_VOCATIONAL
+BRIDGE_COURSE
+}
+
+enum Category {
+OC
+BC_A
+BC_B
+BC_C
+BC_D
+BC_E
+SC
+ST
+EWS
+}
+
+// ====================================================================
+// MODELS
+// ====================================================================
+
+// For Teacher/Admin accounts
+model User {
+id       Int    @id @default(autoincrement())
+email    String @unique
+password String
+fullName String
+role     Role
+
+questions   Question[]
+papers      QuestionPaper[]
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+}
+
+// Student Model (as provided)
+model Student {
+id                        Int             @id @default(autoincrement())
+studentId                 String?         @unique // Login ID
+password                  String          // Hashed password
+fullName                  String
+fatherName                String
+motherName                String
+dateOfBirth               DateTime        @db.Date // Store only date
+gender                    String
+email                     String          @unique
+mobileNumber              String
+alternativeMobileNumber   String?
+stream                    Stream
+qualifyingExam            QualifyingExam
+yearOfPassing             Int
+medium                    String?
+placeOfStudy              String?
+marks                     String?
+collegeName               String?
+collegeAddress            String?
+category                  Category
+minorityStatus            String
+address                   String
+city                      String
+state                     String
+pincode                   String
+photo                     String?
+
+createdAt                 DateTime        @default(now())
+updatedAt                 DateTime        @updatedAt
+
+examAttempts              ExamAttempt[]
+}
+
+model Question {
+id            Int         @id @default(autoincrement())
+text          String      // The question text
+options       String[]    // Array of options (JSON stringified)
+correctAnswer String      // Index or value of the correct option
+subject       Subject
+difficulty    Difficulty  // EASY (1), MEDIUM (2), HARD (3)
+
+uploadedBy    User        @relation(fields: [uploadedById], references: [id])
+uploadedById  Int
+
+createdAt     DateTime    @default(now())
+
+// Link to the paper it belongs to (Many-to-Many is handled via a separate table in pure SQL, but in Prisma we use explicit relation fields/lists on the intermediate model)
+paperQuestions PaperQuestion[]
+}
+
+model QuestionPaper {
+id            Int             @id @default(autoincrement())
+title         String
+durationHours Int             @default(3)
+totalMarks    Int             @default(160) // 40 P + 40 C + 80 M
+isActive      Boolean         @default(false)
+
+// Creator
+createdBy     User            @relation(fields: [createdById], references: [id])
+createdById   Int
+
+// Questions in the paper
+paperQuestions PaperQuestion[]
+examAttempts   ExamAttempt[]
+
+createdAt     DateTime        @default(now())
+}
+
+// Intermediate table for Many-to-Many relationship between Question and QuestionPaper
+model PaperQuestion {
+paper         QuestionPaper @relation(fields: [paperId], references: [id])
+paperId       Int
+question      Question      @relation(fields: [questionId], references: [id])
+questionId    Int
+
+@@id([paperId, questionId])
+}
+
+model ExamAttempt {
+id            Int             @id @default(autoincrement())
+student       Student         @relation(fields: [studentId], references: [id])
+studentId     Int
+
+paper         QuestionPaper   @relation(fields: [paperId], references: [id])
+paperId       Int
+
+startTime     DateTime        @default(now())
+endTime       DateTime?
+
+// Store student answers, can be a JSON string or an array of objects
+answers       Json?
+
+isCompleted   Boolean         @default(false)
+score         Int             @default(0)
+
+result        Result? // 1 to 1 relation
+}
+
+model Result {
+id            Int         @id @default(autoincrement())
+examAttempt   ExamAttempt @relation(fields: [attemptId], references: [id])
+attemptId     Int         @unique // Ensures 1:1 relation
+
+totalScore    Int
+
+// Subject-wise scores and analysis (JSON stringified for complex data)
+analysisJson  Json? // E.g., { physics: { score: 35, total: 40, weakAreas: ['Mechanics'] }, chemistry: {...} }
+
+createdAt     DateTime    @default(now())
+}

@@ -1,0 +1,25 @@
+{
+  "name": "viit-mock-portal-backend",
+  "version": "1.0.0",
+  "description": "Backend for VIIT Mock EAPCET Portal using Node, Express, Prisma, and PostgreSQL.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:generate": "prisma generate",
+    "prisma:seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.x.x",
+    "bcrypt": "^5.1.1",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "prisma": "^5.x.x"
+  }
+}
