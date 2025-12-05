@@ -108,20 +108,28 @@ examAttempts              ExamAttempt[]
 }
 
 model Question {
-id            Int         @id @default(autoincrement())
-text          String      // The question text
-options       String[]    // Array of options (JSON stringified)
-correctAnswer String      // Index or value of the correct option
-subject       Subject
-difficulty    Difficulty  // EASY (1), MEDIUM (2), HARD (3)
+  id             Int           @id @default(autoincrement())
+  text           String        // The question text (supports rich text)
+  options        String[]      // Array of options (JSON stringified)
+  correctAnswer  String        // Index or value of the correct option
+  subject        Subject
+  difficulty     Difficulty    // EASY (1), MEDIUM (2), HARD (3)
 
-uploadedBy    User        @relation(fields: [uploadedById], references: [id])
-uploadedById  Int
+  // --- NEW FIELDS FOR IMAGES ---
+  questionImageUrl String?
+  optionAImageUrl  String?
+  optionBImageUrl  String?
+  optionCImageUrl  String?
+  optionDImageUrl  String?
+  // -----------------------------
 
-createdAt     DateTime    @default(now())
+  uploadedBy     User          @relation(fields: [uploadedById], references: [id])
+  uploadedById   Int
 
-// Link to the paper it belongs to (Many-to-Many is handled via a separate table in pure SQL, but in Prisma we use explicit relation fields/lists on the intermediate model)
-paperQuestions PaperQuestion[]
+  createdAt      DateTime      @default(now())
+
+  // Link to the paper it belongs to
+  paperQuestions PaperQuestion[]
 }
 
 model QuestionPaper {

@@ -26,13 +26,11 @@ const sanitizeQuestion = (question) => {
 
 // --- Student Function: Get list of available exams ---
 const getAvailableExams = async (req, res) => {
-    // Mock studentId for now, replace with authenticated user later
-    // const studentId = req.query.studentId || 1; 
     
     try {
-        // Fetch only papers explicitly marked as active
+        // Fetch only papers explicitly marked as active (isActive: true)
         const availablePapers = await prisma.questionPaper.findMany({
-            where: { isActive: true },
+            where: { isActive: true }, // 👈 Crucial filter!
             select: { 
                 id: true, 
                 title: true, 
@@ -183,9 +181,159 @@ const submitAttempt = async (req, res) => {
     }
 };
 
+const getAttemptResult = async (req, res) => {
+    // ⚠️ IMPORTANT: In a real app, studentId should come from req.user.id (auth token).
+    // For now, we take it from query params.
+    const { studentId, paperId } = req.query; 
+
+    if (!studentId || !paperId) {
+        return res.status(400).json({ message: "Student ID and Paper ID are required." });
+    }
+
+    try {
+        const result = await prisma.result.findFirst({
+            where: {
+                examAttempt: {
+                    studentId: parseInt(studentId),
+                    paperId: parseInt(paperId),
+                    isCompleted: true, // Only show completed exams
+                }
+            },
+            // Include necessary relations to get paper details
+            include: {
+                examAttempt: {
+                    include: { 
+                        paper: true,
+                        student: true 
+                    }
+                }
+            }
+        });
+
+        if (!result) {
+            return res.status(404).json({ message: "No completed result found for this exam." });
+        }
+
+        const analysis = result.analysisJson || {}; 
+        
+        // Map the backend data to the exact structure the frontend expects
+        return res.status(200).json({
+            examName: result.examAttempt.paper.title,
+            date: result.createdAt.toISOString().split('T')[0], // Format date simply
+            totalMarks: result.examAttempt.paper.totalMarks,
+            score: result.totalScore,
+            timeTaken: "2h 45m", // ⚠️ Mock: Requires calculating time diff (endTime - startTime)
+            accuracy: "N/A", // ⚠️ Mock: Requires calculating (Correct / Total Attempted)
+            rank: "N/A",     // ⚠️ Mock: Requires query across all students for the paper
+            percentile: "N/A", // ⚠️ Mock: Requires query across all students
+            
+            // Extract subject scores from the JSON analysis field
+            mathsScore: analysis?.MATHS?.score || 0,
+            physicsScore: analysis?.PHYSICS?.score || 0,
+            chemistryScore: analysis?.CHEMISTRY?.score || 0,
+            insights: ["Review topics with lower scores.", "Focus on time management."],
+        });
+
+    } catch (error) {
+        console.error('Get Result Error:', error);
+        return res.status(500).json({ message: 'Internal server error while fetching result.' });
+    }
+};
+
+/**
+ * Helper function to map result data structure from the database
+ * to the exact structure the Results.jsx frontend component expects.
+ */
+const mapResultData = (result) => {
+    // analysisJson is stored as a JSON object by Prisma
+    const analysis = result.analysisJson || {};
+    const totalMarks = result.examAttempt.paper.totalMarks;
+    const startTime = result.examAttempt.startTime;
+    const endTime = result.examAttempt.endTime;
+    
+    // ⚠️ MOCK / CALCULATION PLACEHOLDERS
+    let timeTaken = "N/A";
+    if (startTime && endTime) {
+        const diffMs = endTime.getTime() - startTime.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        timeTaken = `${diffHours}h ${diffMinutes}m`;
+    }
+
+    return {
+        // Use the Result ID as the unique key for the accordion/main display
+        id: result.id, 
+        examName: result.examAttempt.paper.title,
+        date: result.createdAt.toISOString().split('T')[0],
+        totalMarks: totalMarks,
+        score: result.totalScore, // Send the raw score for processing
+        
+        // MOCK data that needs complex logic to be fully dynamic:
+        timeTaken: timeTaken,
+        accuracy: "N/A", 
+        rank: "N/A",
+        percentile: "N/A",
+        
+        // Extract subject scores from the JSON analysis field
+        mathsScore: analysis.MATHS?.score || 0,
+        physicsScore: analysis.PHYSICS?.score || 0,
+        chemistryScore: analysis.CHEMISTRY?.score || 0,
+        insights: ["Review topics with lower scores.", "Focus on time management."],
+    };
+};
+
+/**
+ * Fetches all completed exam results and associated analysis for a specific student.
+ */
+const getStudentResultsHistory = async (req, res) => {
+    // Get studentId from query parameters (as implemented in the frontend fetch)
+    const { studentId } = req.query; 
+
+    if (!studentId) {
+        return res.status(400).json({ message: "Student ID is required." });
+    }
+
+    try {
+        // Fetch all Result records where the linked ExamAttempt is completed by the student
+        const results = await prisma.result.findMany({
+            where: {
+                examAttempt: {
+                    studentId: parseInt(studentId),
+                    isCompleted: true,
+                }
+            },
+            // Order by most recent completion date first
+            orderBy: { createdAt: 'desc' },
+            // Include necessary relations to map the data
+            include: {
+                examAttempt: {
+                    include: { 
+                        paper: true,
+                    }
+                }
+            }
+        });
+
+        // Map the raw Prisma objects into the standardized frontend structure
+        const history = results.map(mapResultData);
+
+        return res.status(200).json({
+            message: "Student results history fetched successfully.",
+            history: history,
+        });
+
+    } catch (error) {
+        console.error('Get History Error:', error);
+        // Return 500 error if database operation fails unexpectedly
+        return res.status(500).json({ message: 'Internal server error while fetching results history.' });
+    }
+};
+
 
 module.exports = {
     getAvailableExams,
     startExam,
-    submitAttempt
+    submitAttempt,
+    getAttemptResult,
+    getStudentResultsHistory
 };
