@@ -70,7 +70,7 @@ app.get('/', (req, res) => {
 });
 
 // --- AUTH ROUTES ---
-app.post('/api/auth/register', authController.registerStudent);
+app.post('/api/auth/register',upload.single('photo'),authController.registerStudent);
 app.post('/api/auth/login', authController.login);
 
 

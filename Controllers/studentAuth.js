@@ -21,9 +21,33 @@ const generatePassword = () => {
 };
 
 const registerStudent = async (req, res) => {
-    const studentData = req.body;
+    const {
+    fullName,
+    fatherName,
+    motherName,
+    dob,
+    gender,
+    email,
+    mobile: mobileNumber,
+    altMobile: alternativeMobileNumber,
+    stream,
+    qualifyingExam,
+    yearOfPassing,
+    medium,
+    placeOfStudy,
+    category,
+    minorityStatus,
+    address,
+    city,
+    state,
+    pincode,
+    marks,
+    collegeName,
+    collegeAddress,
+    } = req.body;
+    const photo = req.file?.path; 
     
-    if (!studentData.email || !studentData.fullName) {
+    if (!email || !fullName) {
         return res.status(400).json({ message: 'Missing required fields.' });
     }
 
@@ -34,10 +58,31 @@ const registerStudent = async (req, res) => {
     try {
         const newStudent = await prisma.student.create({
             data: {
-                ...studentData,
                 studentId: studentId,
                 password: hashedPassword,
-                dateOfBirth: new Date(studentData.dateOfBirth),
+                fullName,
+                fatherName,
+                motherName,
+                gender,
+                mobileNumber,
+                alternativeMobileNumber,
+                email,
+                stream,
+                qualifyingExam,
+                yearOfPassing: parseInt(yearOfPassing),
+                medium,
+                placeOfStudy,
+                category,
+                minorityStatus,
+                address,
+                city,
+                state,
+                pincode,
+                marks,
+                collegeName,
+                collegeAddress,
+                photo:null,
+                dateOfBirth: new Date(dob),
             },
         });
 
