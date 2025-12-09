@@ -4,6 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 // ------------------------------------------------------------------
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { sendMail, createRegistrationMail } = require('../utils/mail');
 
 const SALT_ROUNDS = 10;
@@ -19,6 +20,27 @@ const generateStudentId = () => {
 const generatePassword = () => {
     return Math.random().toString(36).slice(-8);
 };
+
+const generateAccessToken = function(studentId){
+    return jwt.sign(
+        {
+            id: studentId
+        },
+        process.env.JWT_SECRET,
+        {expiresIn: process.env.ACCESS_TOKEN_EXPIRY}
+    )
+}
+
+const generateRefreshToken = function(studentId){
+    return jwt.sign(
+        {
+            id: studentId
+        },
+        process.env.JWT_SECRET,
+        {expiresIn: process.env.REFRESH_TOKEN_EXPIRY
+        }
+    )
+}
 
 const registerStudent = async (req, res) => {
     const {
@@ -108,7 +130,7 @@ const registerStudent = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { studentId, password } = req.body;
+    const { username:studentId, password } = req.body;
 
     if (!studentId || !password) {
         return res.status(400).json({ message: 'Login ID and password are required.' });
@@ -119,32 +141,45 @@ const login = async (req, res) => {
             where: { studentId: studentId },
         });
 
-        let userToAuthenticate = student;
-        let role = 'STUDENT';
-
         if (!student) {
-            const user = await prisma.user.findUnique({
-                where: { email: studentId }, 
-            });
-
-            if (!user) {
-                 return res.status(401).json({ message: 'Invalid credentials.' });
-            }
-            userToAuthenticate = user;
-            role = user.role;
+            return res.status(401).json({ message: 'Invalid credentials.' });
         }
 
-        const passwordMatch = await bcrypt.compare(password, userToAuthenticate.password);
+        const passwordMatch = await bcrypt.compare(password, student.password);
 
         if (!passwordMatch) {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
 
-        res.status(200).json({ 
-            message: 'Login successful.', 
-            user: { id: userToAuthenticate.id, identifier: studentId, fullName: userToAuthenticate.fullName, role: role } 
+        const accessToken = generateAccessToken(student.id);
+        const refreshToken = generateRefreshToken(student.id);
+
+        const updatedStudent = await prisma.student.update({
+            where: { id: student.id },
+            data: { refreshToken: refreshToken },
         });
 
+
+        const options = {
+            httpOnly: true,
+            secure : true,
+        }
+
+        return res
+               .status(200)
+               .cookie('refreshToken', refreshToken, options)
+               .cookie('accessToken', accessToken, options)
+               .json({ 
+                    message: 'Login successful.', 
+                    student: { 
+                        id: updatedStudent.id, 
+                        studentId: updatedStudent.studentId,
+                        email: updatedStudent.email,
+                        accessToken: accessToken
+                    } 
+                });
+
+        
     } catch (error) {
         console.error('Login Error:', error);
         res.status(500).json({ message: 'Internal server error during login.' });
