@@ -17,13 +17,9 @@
     "csv-parser": "^3.2.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-<<<<<<< HEAD
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^7.0.11"
-=======
-    "jsonwebtoken": "^9.0.3",
-    "multer": "^1.4.5-lts.1"
->>>>>>> 8fc65a3f65104638b937c5eb8f46e7122067b717
+    "nodemailer": "^7.0.11",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
