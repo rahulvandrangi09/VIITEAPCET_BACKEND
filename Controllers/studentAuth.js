@@ -5,8 +5,6 @@ const prisma = new PrismaClient();
 const bcrypt = require('bcrypt');
 
 // Ensure you have nodemailer installed and utils/mail.js is present
-const { sendMail, createRegistrationMail } = require('../utils/mail'); 
-
 const jwt = require('jsonwebtoken');
 const { sendMail, createRegistrationMail } = require('../utils/mail');
 
@@ -137,9 +135,8 @@ const registerStudent = async (req, res) => {
         res.status(500).json({ message: 'Internal server error during registration.' });
     }
 };
-
 const login = async (req, res) => {
-    const { username:studentId, password } = req.body;
+    const { studentId, password } = req.body;
 
     if (!studentId || !password) {
         return res.status(400).json({ message: 'Login ID and password are required.' });
@@ -150,45 +147,47 @@ const login = async (req, res) => {
             where: { studentId: studentId },
         });
 
-        if (!student) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
+        let userToAuthenticate;
+        let role;
+        
+        // --- 1. Check if it's a Student login ---
+        if (student) {
+            userToAuthenticate = student;
+            role = 'STUDENT';
+        } else {
+            // --- 2. Check if it's a Admin/Teacher login (using email as ID) ---
+            const user = await prisma.user.findUnique({
+                where: { email: studentId }, 
+            });
+
+            if (user) {
+                userToAuthenticate = user;
+                role = user.role;
+            } else {
+                // --- 3. Neither Student nor Admin/Teacher found ---
+                return res.status(401).json({ message: 'Invalid credentials. User not found.' });
+            }
         }
 
-        const passwordMatch = await bcrypt.compare(password, student.password);
+        // --- 4. Password check ---
+        const passwordMatch = await bcrypt.compare(password, userToAuthenticate.password);
 
         if (!passwordMatch) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
+            return res.status(401).json({ message: 'Invalid credentials. Password incorrect.' });
         }
 
-        const accessToken = generateAccessToken(student.id);
-        const refreshToken = generateRefreshToken(student.id);
-
-        const updatedStudent = await prisma.student.update({
-            where: { id: student.id },
-            data: { refreshToken: refreshToken },
+        // --- 5. SUCCESS RESPONSE (Ensure all fields are present!) ---
+        res.status(200).json({ 
+            message: 'Login successful.', 
+            user: { 
+                id: userToAuthenticate.id, 
+                // Use the input ID for identifier
+                identifier: studentId, 
+                fullName: userToAuthenticate.fullName, 
+                role: role // <-- This must be defined and sent!
+            } 
         });
 
-
-        const options = {
-            httpOnly: true,
-            secure : true,
-        }
-
-        return res
-               .status(200)
-               .cookie('refreshToken', refreshToken, options)
-               .cookie('accessToken', accessToken, options)
-               .json({ 
-                    message: 'Login successful.', 
-                    student: { 
-                        id: updatedStudent.id, 
-                        studentId: updatedStudent.studentId,
-                        email: updatedStudent.email,
-                        accessToken: accessToken
-                    } 
-                });
-
-        
     } catch (error) {
         console.error('Login Error:', error);
         res.status(500).json({ message: 'Internal server error during login.' });
