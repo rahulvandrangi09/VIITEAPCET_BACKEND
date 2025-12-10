@@ -1,10 +1,10 @@
-// ------------------------------------------------------------------
-// CORRECTED: Import PrismaClient directly
+// Controllers/studentAuth.js
+
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-// ------------------------------------------------------------------
 const bcrypt = require('bcrypt');
-const { sendMail, createRegistrationMail } = require('../utils/mail');
+// Ensure you have nodemailer installed and utils/mail.js is present
+const { sendMail, createRegistrationMail } = require('../utils/mail'); 
 
 const SALT_ROUNDS = 10;
 
@@ -45,7 +45,10 @@ const registerStudent = async (req, res) => {
     collegeName,
     collegeAddress,
     } = req.body;
-    const photo = req.file?.path; 
+    
+    // --- FIX: Capture the photo path from req.file.path (Multer result) ---
+    // This path is local, e.g., 'uploads/1700000000000-photo.jpg'
+    const photoPath = req.file?.path; 
     
     if (!email || !fullName) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -81,12 +84,15 @@ const registerStudent = async (req, res) => {
                 marks,
                 collegeName,
                 collegeAddress,
-                photo:null,
+                // --- FIX: Store the photo path in the DB ---
+                photo: photoPath, 
                 dateOfBirth: new Date(dob),
             },
         });
 
+        // --- AUTH/MAIL: Send credentials via real email ---
         const emailContent = createRegistrationMail(newStudent.fullName, studentId, rawPassword);
+        // This will now use Nodemailer and your .env credentials
         sendMail(newStudent.email, 'VIIT Portal Registration Successful', emailContent);
 
         res.status(201).json({ 

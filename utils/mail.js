@@ -1,41 +1,83 @@
-// This module simulates sending emails. In a real application, you would use a service 
-// like Nodemailer, SendGrid, or AWS SES.
+// utils/mail.js
 
-const sendMail = async (to, subject, htmlContent) => {
-    // In a real app, you'd use a library like nodemailer here.
-    
-    console.log('-------------------------------------------');
-    console.log(`MAIL SENT TO: ${to}`);
-    console.log(`SUBJECT: ${subject}`);
-    console.log('-------------------------------------------');
-    console.log('EMAIL BODY (HTML/TEXT):\n', htmlContent.substring(0, 500) + (htmlContent.length > 500 ? '...' : ''));
-    console.log('-------------------------------------------');
+const nodemailer = require('nodemailer');
+// Load environment variables (ensure dotenv is available and configured in your project)
+require('dotenv').config(); 
 
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-    
-    return { success: true, message: 'Mail simulated successfully.' };
+// 1. Configure the Nodemailer Transport
+// This object uses your .env variables to connect to your SMTP server (e.g., Gmail)
+const transporter = nodemailer.createTransport({
+    // Use environment variables for host and port
+    host: process.env.MAIL_SMTP_HOST, 
+    port: process.env.MAIL_SMTP_PORT, 
+    secure: process.env.MAIL_SMTP_SECURE === 'true', // Use SSL/TLS if true (recommended for 465)
+    auth: {
+        user: process.env.MAIL_SMTP_USER, // Your sender email address
+        pass: process.env.MAIL_SMTP_PASS, // Your App Password
+    },
+});
+
+// 2. Mail Sending Function (Real Implementation)
+const sendMail = (to, subject, htmlContent) => {
+    // Basic check to prevent crashes if config is missing
+    if (!process.env.MAIL_SMTP_USER || !process.env.MAIL_SMTP_PASS || !process.env.MAIL_SENDER_EMAIL) {
+        console.error('❌ EMAIL CONFIGURATION ERROR: Environment variables (MAIL_SMTP_USER/PASS/SENDER_EMAIL) are not fully set.');
+        console.error('Using simulated log instead of sending real email.');
+        // Fallback to simulation log
+        console.log('-------------------------------------------');
+        console.log(`MAIL LOG: Subject: ${subject} | To: ${to}`);
+        console.log('-------------------------------------------');
+        return;
+    }
+
+    const mailOptions = {
+        from: process.env.MAIL_SENDER_EMAIL, // The 'From' address from your .env
+        to: to,
+        subject: subject,
+        html: htmlContent,
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+            console.error('❌ Real Mail Send Error:', error.message);
+            console.error('HINT: For Gmail, ensure 2FA is on and you are using a generated App Password for MAIL_SMTP_PASS.');
+        } else {
+            console.log('✅ Email sent successfully. Response:', info.response);
+        }
+    });
+    // Removed the simulated Promise delay/return
 };
 
+// 3. Email Content Creation Function (Registration)
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
+    // Improved HTML template for better readability in actual email clients
     return `
-        <h1>Welcome to the VIIT Mock Portal, ${fullName}!</h1>
-        <p>Your registration is successful. You can now log in to the student dashboard.</p>
-        <p><strong>Your Login ID:</strong> ${studentId}</p>
-        <p><strong>Your Temporary Password:</strong> ${rawPassword}</p>
-        <p>Please log in and consider changing your password immediately.</p>
-        <p>Good luck with your exams!</p>
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIIT Mock Portal Registration Successful!</h2>
+            <p>Dear ${fullName},</p>
+            <p>Congratulations! Your registration is successful. You can now log in to the student dashboard.</p>
+            
+            <p style="font-weight: bold;">Please use the following credentials:</p>
+            
+            <table style="border-collapse: collapse; width: 100%; margin: 15px 0;">
+                <tr>
+                    <td style="padding: 10px; background-color: #f4f4f4; border: 1px solid #ddd; width: 40%; font-weight: bold;">Login ID (Student ID):</td>
+                    <td style="padding: 10px; border: 1px solid #ddd; width: 60%;">${studentId}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; background-color: #f4f4f4; border: 1px solid #ddd; font-weight: bold;">Temporary Password:</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${rawPassword}</td>
+                </tr>
+            </table>
+            
+            <p>Please log in and consider changing your password immediately for security purposes.</p>
+            <p>Good luck with your exams!</p>
+            <p style="margin-top: 20px; font-size: small; color: #777;">Thank you,<br>The VIIT Team</p>
+        </div>
     `;
 };
 
-/**
- * Creates a personalized result email for a student.
- * @param {string} fullName
- * @param {number} totalScore
- * @param {number} totalMarks
- * @param {object} analysis - Object like { PHYSICS: { score: 30, total: 40, weakAreas: [] }, ...}
- * @returns {string} HTML content
- */
+// 4. Email Content Creation Function (Results) - Your original logic is maintained
 const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
     let weaknessHtml = '';
     const weakSubjects = [];
@@ -51,30 +93,34 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
 
     if (weakSubjects.length > 0) {
         weaknessHtml = `
-            <h2>Personalized Suggestion</h2>
-            <p>Based on your performance, here are some subjects we recommend you focus on:</p>
-            <ul>${weaknessHtml}</ul>
-            <p>A balanced preparation is key to success!</p>
+            <div style="padding: 15px; border: 1px solid #ffcc00; background-color: #fffacd; margin-top: 20px;">
+                <h2>Personalized Suggestion</h2>
+                <p>Based on your performance, here are some subjects we recommend you focus on:</p>
+                <ul style="padding-left: 20px;">${weaknessHtml}</ul>
+                <p>A balanced preparation is key to success!</p>
+            </div>
         `;
     } else {
-        weaknessHtml = '<h2>Congratulations!</h2><p>Your performance across all subjects was strong and balanced!</p>';
+        weaknessHtml = '<div style="padding: 15px; border: 1px solid #4CAF50; background-color: #e6ffe6; margin-top: 20px;"><h2>Congratulations!</h2><p>Your performance across all subjects was strong and balanced! Keep up the great work.</p></div>';
     }
 
     return `
-        <h1>Mock Exam Results for ${fullName}</h1>
-        <p>We are pleased to announce your results for the latest mock test.</p>
-        <p><strong>Overall Score:</strong> ${totalScore} out of ${totalMarks}</p>
-        
-        <h2>Subject Breakdown:</h2>
-        <ul>
-            <li>Physics: ${analysis.PHYSICS.score}/${analysis.PHYSICS.total}</li>
-            <li>Chemistry: ${analysis.CHEMISTRY.score}/${analysis.CHEMISTRY.total}</li>
-            <li>Maths: ${analysis.MATHS.score}/${analysis.MATHS.total}</li>
-        </ul>
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h1 style="color: #003973;">Mock Exam Results for ${fullName}</h1>
+            <p>We are pleased to announce your results for the latest mock test.</p>
+            <p><strong>Overall Score:</strong> <span style="font-size: 1.2em; color: #003973; font-weight: bold;">${totalScore} out of ${totalMarks}</span></p>
+            
+            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Subject Breakdown:</h2>
+            <ul style="list-style-type: none; padding: 0;">
+                <li style="margin-bottom: 5px;">Physics: <strong>${analysis.PHYSICS.score}/${analysis.PHYSICS.total}</strong></li>
+                <li style="margin-bottom: 5px;">Chemistry: <strong>${analysis.CHEMISTRY.score}/${analysis.CHEMISTRY.total}</strong></li>
+                <li style="margin-bottom: 5px;">Maths: <strong>${analysis.MATHS.score}/${analysis.MATHS.total}</strong></li>
+            </ul>
 
-        ${weaknessHtml}
-        
-        <p>All the best!</p>
+            ${weaknessHtml}
+            
+            <p style="margin-top: 20px;">All the best for your continued preparation!</p>
+        </div>
     `;
 };
 
