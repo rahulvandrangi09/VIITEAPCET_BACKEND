@@ -3,13 +3,12 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const bcrypt = require('bcrypt');
-<<<<<<< HEAD
+
 // Ensure you have nodemailer installed and utils/mail.js is present
 const { sendMail, createRegistrationMail } = require('../utils/mail'); 
-=======
+
 const jwt = require('jsonwebtoken');
 const { sendMail, createRegistrationMail } = require('../utils/mail');
->>>>>>> 8fc65a3f65104638b937c5eb8f46e7122067b717
 
 const SALT_ROUNDS = 10;
 
