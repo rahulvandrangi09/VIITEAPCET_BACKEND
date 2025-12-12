@@ -6,6 +6,7 @@ const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
 const csv = require('csv-parser');
+const { hashPassword, comparePassword } = require('./authController');
 
 // --- Helper for Random Selection ---
 const shuffleArray = (array) => {
@@ -562,6 +563,87 @@ const uploadQuestions = async (req, res) => {
     }
 };
 
+const registerTeacher = async (req, res) => {
+    // ⚠️ In a real app, ensure this function is only callable by an authenticated ADMIN!
+    const { fullName, email, studentId, temporaryPassword } = req.body; 
+
+    if (!fullName || !email || !studentId || !temporaryPassword) {
+        return res.status(400).json({ message: 'All fields (name, email, ID, temp password) are required.' });
+    }
+
+    try {
+        const hashedPassword = await hashPassword(temporaryPassword); // Use helper
+
+        const newTeacher = await prisma.user.create({
+            data: {
+                fullName: fullName,
+                email: email,
+                studentId: studentId, // Unique ID for login
+                password: hashedPassword,
+                role: 'TEACHER', // Assuming 'TEACHER' role in Prisma schema
+            },
+        });
+
+        res.status(201).json({
+            message: `Teacher ${fullName} created successfully. ID: ${studentId}`,
+            userId: newTeacher.id,
+        });
+
+    } catch (error) {
+        if (error.code === 'P2002') { 
+            return res.status(409).json({ message: 'A user with this ID or email already exists.' });
+        }
+        console.error('Teacher Registration Error:', error);
+        res.status(500).json({ message: 'Internal server error during teacher registration.' });
+    }
+};
+
+// 🚨 NEW FUNCTION: Admin Password Change
+const changeAdminPassword = async (req, res) => {
+    // 🚨 CRITICAL CHANGE: Get the user ID from the verified JWT token
+    const userId = req.user.id; 
+    
+    const { currentPassword, newPassword } = req.body;
+    // We no longer need studentId from the body since the token identifies the user
+    
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'Current and new password are required.' });
+    }
+
+    try {
+        // 1. Fetch the user based on the verified ID from the token
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+        });
+
+        // This check is mostly redundant if the token is valid, but good for safety
+        if (!user) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        
+        // 2. Compare current password with stored hash
+        const isMatch = await comparePassword(currentPassword, user.password);
+        
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Incorrect current password.' });
+        }
+
+        // 3. Hash the new password and update
+        const newHashedPassword = await hashPassword(newPassword);
+
+        await prisma.user.update({
+            where: { id: userId }, // Update the user identified by the token
+            data: { password: newHashedPassword },
+        });
+
+        res.status(200).json({ message: `${user.role} password updated successfully.` });
+
+    } catch (error) {
+        console.error('Password Change Error:', error);
+        res.status(500).json({ message: 'Internal server error during password change.' });
+    }
+};
+
 
 module.exports = {
     generateQuestionPaper,
@@ -570,4 +652,6 @@ module.exports = {
     saveQuestionsToDb,
     generateCustomQuestionPaper, // 🚨 NEW EXPORT
     previewQuestionPaper, // 🚨 NEW EXPORT
+    registerTeacher,
+    changeAdminPassword
 };

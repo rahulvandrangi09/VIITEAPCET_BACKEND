@@ -5,8 +5,9 @@ const { PrismaClient } = require('@prisma/client');
 const multer = require('multer'); // <--- Multer for file uploads
 const path = require('path');     // <--- Path for file paths
 const fs = require('fs')
+const { protect, authorize } = require('./middleware/authMiddleware');
 // Initialize Controllers and Prisma
-const authController = require('./Controllers/studentAuth');
+const authController = require('./Controllers/authController');
 const adminController = require('./Controllers/adminController');
 const studentController = require('./controllers/studentController');
 const prisma = new PrismaClient();
@@ -70,33 +71,32 @@ app.get('/', (req, res) => {
 });
 
 // --- AUTH ROUTES ---
-app.post('/api/auth/register',upload.single('photo'),authController.registerStudent);
+app.post('/api/auth/register', upload.single('photo'), authController.registerStudent);
 app.post('/api/auth/login', authController.login);
 
 
+app.post('/api/auth/register', upload.single('photo'), authController.registerStudent); 
+app.post('/api/auth/login', authController.login);
+app.post('/api/auth/change-password', adminController.changeAdminPassword);
+app.post('/api/admin/register-teacher', protect, authorize('ADMIN'), adminController.registerTeacher);
 // --- ADMIN ROUTES ---
-app.post('/api/admin/create-paper', adminController.generateQuestionPaper);
-app.post('/api/admin/send-results', adminController.sendResultsMails);
-
-app.post('/api/admin/create-paper-custom', adminController.generateCustomQuestionPaper);
-
-
-// New Route for Preview
-app.get('/api/admin/preview-paper/:paperId', adminController.previewQuestionPaper);
+app.post('/api/admin/create-paper', protect, authorize('ADMIN'), adminController.generateQuestionPaper);
+app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
+app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN'), adminController.generateCustomQuestionPaper);
+app.get('/api/admin/preview-paper/:paperId', protect, authorize('ADMIN', 'TEACHER'), adminController.previewQuestionPaper);
 
 // --- TEACHER ROUTES ---
 // Applied upload.single('csvFile') middleware to handle the file upload
-app.post('/api/teacher/save-questions', upload.any(), adminController.saveQuestionsToDb);
-app.post('/api/teacher/upload-questions', upload.single('csvFile'), adminController.uploadQuestions);
+app.post('/api/teacher/save-questions', protect, authorize('ADMIN', 'TEACHER'), upload.any(), adminController.saveQuestionsToDb);
+app.post('/api/teacher/upload-questions', protect, authorize('ADMIN', 'TEACHER'), upload.single('csvFile'), adminController.uploadQuestions);
 
 // --- STUDENT ROUTES ---
 // 🚨 MOVED ROUTE: The getAttemptResult route is now correctly placed here.
-app.get('/api/student/result', studentController.getAttemptResult); 
-app.get('/api/student/results/history', studentController.getStudentResultsHistory);
-
-app.get('/api/student/exams', studentController.getAvailableExams);
-app.post('/api/student/start-exam', studentController.startExam);
-app.post('/api/student/submit-attempt', studentController.submitAttempt);
+app.get('/api/student/result', protect, authorize('STUDENT'), studentController.getAttemptResult); 
+app.get('/api/student/results/history', protect, authorize('STUDENT'), studentController.getStudentResultsHistory);
+app.get('/api/student/exams', protect, authorize('STUDENT'), studentController.getAvailableExams);
+app.post('/api/student/start-exam', protect, authorize('STUDENT'), studentController.startExam);
+app.post('/api/student/submit-attempt', protect, authorize('STUDENT'), studentController.submitAttempt);
 
 // Connect to DB and Start Server
 async function main() {
