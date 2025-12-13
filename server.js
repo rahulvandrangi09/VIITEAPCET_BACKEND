@@ -71,10 +71,6 @@ app.get('/', (req, res) => {
 });
 
 // --- AUTH ROUTES ---
-app.post('/api/auth/register', upload.single('photo'), authController.registerStudent);
-app.post('/api/auth/login', authController.login);
-
-
 app.post('/api/auth/register', upload.single('photo'), authController.registerStudent); 
 app.post('/api/auth/login', authController.login);
 app.post('/api/auth/change-password', adminController.changeAdminPassword);
@@ -84,6 +80,7 @@ app.post('/api/admin/create-paper', protect, authorize('ADMIN'), adminController
 app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
 app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN'), adminController.generateCustomQuestionPaper);
 app.get('/api/admin/preview-paper/:paperId', protect, authorize('ADMIN', 'TEACHER'), adminController.previewQuestionPaper);
+app.get('/api/admin/stats', protect, authorize('ADMIN'), adminController.getAdminStats);
 
 // --- TEACHER ROUTES ---
 // Applied upload.single('csvFile') middleware to handle the file upload

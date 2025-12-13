@@ -131,7 +131,7 @@ const registerStudent = async (req, res) => {
  */
 const login = async (req, res) => {
     // We assume 'studentId' holds the login ID/Username for all roles.
-    const { studentId, password } = req.body; 
+    const {studentId, password } = req.body; 
 
     if (!studentId || !password) {
         return res.status(400).json({ message: 'Username (ID) and password are required.' });
@@ -177,7 +177,12 @@ const login = async (req, res) => {
         const token = generateToken(user.id, user.role);
 
         // 5. Successful Login Response
-        res.status(200).json({
+        res.status(200)
+        .cookie('token', token, {
+            httpOnly: true,
+            secure: true,
+        })
+        .json({
             message: `Login successful for role: ${user.role}`,
             token: token,
             user: {
