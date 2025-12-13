@@ -39,10 +39,90 @@ const generateToken = (userId, role) => {
  * Handles the registration of a new student (assuming student-specific logic like photo upload).
  */
 const registerStudent = async (req, res) => {
-    // NOTE: Replace this with your actual student registration logic.
-    // Ensure you use hashPassword() before storing the password!
-    // Example placeholder:
-    res.status(501).json({ message: "Student registration logic is not fully implemented here." });
+    const {
+    fullName,
+    fatherName,
+    motherName,
+    dob,
+    gender,
+    email,
+    mobile: mobileNumber,
+    altMobile: alternativeMobileNumber,
+    stream,
+    qualifyingExam,
+    yearOfPassing,
+    medium,
+    placeOfStudy,
+    category,
+    minorityStatus,
+    address,
+    city,
+    state,
+    pincode,
+    marks,
+    collegeName,
+    collegeAddress,
+    } = req.body;
+    const photo = req.file?.path; 
+    
+    if (!email || !fullName) {
+        return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    const rawPassword = generatePassword();
+    const hashedPassword = await bcrypt.hash(rawPassword, SALT_ROUNDS);
+    const studentId = generateStudentId();
+
+    try {
+        const newStudent = await prisma.student.create({
+            data: {
+                studentId: studentId,
+                password: hashedPassword,
+                fullName,
+                fatherName,
+                motherName,
+                gender,
+                mobileNumber,
+                alternativeMobileNumber,
+                email,
+                stream,
+                qualifyingExam,
+                yearOfPassing: parseInt(yearOfPassing),
+                medium,
+                placeOfStudy,
+                category,
+                minorityStatus,
+                address,
+                city,
+                state,
+                pincode,
+                marks,
+                collegeName,
+                collegeAddress,
+                photo:null,
+                dateOfBirth: new Date(dob),
+            },
+        });
+
+        const emailContent = createRegistrationMail(newStudent.fullName, studentId, rawPassword);
+        sendMail(newStudent.email, 'VIIT Portal Registration Successful', emailContent);
+
+        res.status(201).json({ 
+            message: 'Registration successful. Check your email for login details.', 
+            student: { 
+                id: newStudent.id, 
+                studentId: newStudent.studentId,
+                email: newStudent.email
+            }
+        });
+
+    } catch (error) {
+        console.error('Registration Error:', error);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ message: 'Email or Student ID already in use.' });
+        }
+        res.status(500).json({ message: 'Internal server error during registration.' });
+    }
 };
 
 
