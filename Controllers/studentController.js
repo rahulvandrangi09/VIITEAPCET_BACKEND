@@ -139,6 +139,13 @@ const startExam = async (req, res) => {
 const submitAttempt = async (req, res) => {
     const { attemptId, answers } = req.body; // Answers structure: { questionId: 'answer text', ... }
 
+    // Debug: log arrival of submit call
+    try {
+        console.log('submitAttempt - received request', { attemptId: attemptId, answersType: typeof answers, answersKeys: answers ? Object.keys(answers).slice(0,20) : [] });
+    } catch (e) {
+        console.warn('submitAttempt debug log failed', e);
+    }
+
     if (!attemptId || !answers || typeof answers !== 'object') {
         return res.status(400).json({ message: 'Attempt ID and answers object are required.' });
     }
@@ -161,18 +168,120 @@ const submitAttempt = async (req, res) => {
             where: { id: parseInt(attemptId) },
             data: {
                 // Prisma handles converting the JS object to JSON type in Postgres
-                answers: answers, 
+                answers: answers,
                 endTime: new Date(),
                 isCompleted: true,
             }
         });
 
-        // NOTE: Scoring and result generation is triggered by the Admin, not here.
+        // 3. Calculate score immediately: fetch paper questions and correct answers
+        const attemptWithPaper = await prisma.examAttempt.findUnique({
+            where: { id: parseInt(attemptId) },
+            include: {
+                paper: {
+                    include: { paperQuestions: true }
+                }
+            }
+        });
+
+        // Collect question IDs
+        const questionIds = attemptWithPaper.paper.paperQuestions.map(pq => pq.questionId);
+
+        let questions = await prisma.question.findMany({
+            where: { id: { in: questionIds } }
+        });
+
+        // Ensure `options` is an array for each question (DB may store JSON as string)
+        questions = questions.map(q => {
+            try {
+                if (typeof q.options === 'string') {
+                    return { ...q, options: JSON.parse(q.options) };
+                }
+            } catch (e) {
+                console.warn('Failed to parse options for question', q.id, e);
+            }
+            return q;
+        });
+
+        // Tally correct answers and per-subject scores
+        let totalCorrect = 0;
+        const subjectTotals = {};
+        const subjectCorrect = {};
+
+        for (const q of questions) {
+            const qId = q.id.toString();
+            // Normalize stored answer from client
+            const given = answers?.[qId];
+
+            // Determine correctness robustly
+            let isCorrect = false;
+
+            try {
+                // If correctAnswer stores index (e.g., '0' or '1') compare to given
+                if (String(q.correctAnswer) === String(given)) {
+                    isCorrect = true;
+                } else {
+                    // If options array exists, compare selected option value to correctAnswer
+                    if (Array.isArray(q.options) && given !== undefined) {
+                        const selectedValue = q.options[Number(given)];
+                        if (String(selectedValue) === String(q.correctAnswer)) {
+                            isCorrect = true;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore per-question parse errors
+                console.error('Answer parse error for question', q.id, e);
+            }
+
+            totalCorrect += isCorrect ? 1 : 0;
+
+            // Subject tallies - normalize subject key to uppercase for consistent analysis keys
+            const rawSubj = q.subject || 'GENERAL';
+            const subj = String(rawSubj).toUpperCase();
+            subjectTotals[subj] = (subjectTotals[subj] || 0) + 1;
+            subjectCorrect[subj] = (subjectCorrect[subj] || 0) + (isCorrect ? 1 : 0);
+        }
+
+        // 4. Update attempt score
+        await prisma.examAttempt.update({
+            where: { id: parseInt(attemptId) },
+            data: { score: totalCorrect }
+        });
+
+        // 5. Create Result record with analysis
+        const analysis = {};
+        for (const subj of Object.keys(subjectTotals)) {
+            analysis[subj] = {
+                score: subjectCorrect[subj] || 0,
+                total: subjectTotals[subj] || 0
+            };
+        }
+
+        // Debugging: log subjects and computed tallies to help trace missing scores
+        try {
+            console.log('SubmitAttempt Debug - question subjects and ids:', questions.map(q => ({ id: q.id, subject: q.subject })));
+            console.log('SubmitAttempt Debug - subjectTotals:', subjectTotals);
+            console.log('SubmitAttempt Debug - subjectCorrect:', subjectCorrect);
+            console.log('SubmitAttempt Debug - analysis being saved:', analysis);
+        } catch (logErr) {
+            console.warn('Failed to log submitAttempt debug info', logErr);
+        }
+
+        const result = await prisma.result.create({
+            data: {
+                attemptId: parseInt(attemptId),
+                totalScore: totalCorrect,
+                analysisJson: analysis
+            }
+        });
 
         res.status(200).json({
-            message: 'Exam submitted successfully. Results will be announced soon.',
+            message: 'Exam submitted and scored successfully.',
             attemptId: updatedAttempt.id,
             endTime: updatedAttempt.endTime,
+            totalScore: totalCorrect,
+            resultId: result.id,
         });
 
     } catch (error) {
@@ -214,23 +323,38 @@ const getAttemptResult = async (req, res) => {
             return res.status(404).json({ message: "No completed result found for this exam." });
         }
 
-        const analysis = result.analysisJson || {}; 
-        
+        const analysis = result.analysisJson || {};
+
+        // Calculate time taken (endTime - startTime) if available
+        let timeTaken = 'N/A';
+        const startTime = result.examAttempt.startTime;
+        const endTime = result.examAttempt.endTime || result.createdAt;
+        if (startTime && endTime) {
+            const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            timeTaken = `${diffHours}h ${diffMinutes}m`;
+        }
+
+        // Calculate accuracy as percentage of total marks
+        const totalMarks = result.examAttempt.paper.totalMarks || 1;
+        const accuracy = totalMarks > 0 ? `${((result.totalScore / totalMarks) * 100).toFixed(1)}%` : 'N/A';
+
         // Map the backend data to the exact structure the frontend expects
         return res.status(200).json({
             examName: result.examAttempt.paper.title,
             date: result.createdAt.toISOString().split('T')[0], // Format date simply
-            totalMarks: result.examAttempt.paper.totalMarks,
+            totalMarks: totalMarks,
             score: result.totalScore,
-            timeTaken: "2h 45m", // ⚠️ Mock: Requires calculating time diff (endTime - startTime)
-            accuracy: "N/A", // ⚠️ Mock: Requires calculating (Correct / Total Attempted)
-            rank: "N/A",     // ⚠️ Mock: Requires query across all students for the paper
-            percentile: "N/A", // ⚠️ Mock: Requires query across all students
-            
-            // Extract subject scores from the JSON analysis field
-            mathsScore: analysis?.MATHS?.score || 0,
-            physicsScore: analysis?.PHYSICS?.score || 0,
-            chemistryScore: analysis?.CHEMISTRY?.score || 0,
+            timeTaken: timeTaken,
+            accuracy: accuracy,
+            rank: 'N/A',     // Requires competition data
+            percentile: 'N/A', // Requires competition data
+
+            // Extract subject scores from the JSON analysis field (case-insensitive keys)
+            mathsScore: (analysis.MATHS?.score) || (analysis.maths?.score) || (analysis.Maths?.score) || 0,
+            physicsScore: (analysis.PHYSICS?.score) || (analysis.physics?.score) || (analysis.Physics?.score) || 0,
+            chemistryScore: (analysis.CHEMISTRY?.score) || (analysis.chemistry?.score) || (analysis.Chemistry?.score) || 0,
             insights: ["Review topics with lower scores.", "Focus on time management."],
         });
 
@@ -251,33 +375,42 @@ const mapResultData = (result) => {
     const startTime = result.examAttempt.startTime;
     const endTime = result.examAttempt.endTime;
     
-    // ⚠️ MOCK / CALCULATION PLACEHOLDERS
+    // Compute time taken and accuracy
     let timeTaken = "N/A";
     if (startTime && endTime) {
-        const diffMs = endTime.getTime() - startTime.getTime();
+        const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
         const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
         timeTaken = `${diffHours}h ${diffMinutes}m`;
     }
 
+    const accuracy = totalMarks > 0 ? `${((result.totalScore / totalMarks) * 100).toFixed(1)}%` : 'N/A';
+
+    const getScore = (analysisObj, key) => {
+        if (!analysisObj) return 0;
+        const found = Object.keys(analysisObj).find(k => String(k).toUpperCase() === String(key).toUpperCase());
+        return found && analysisObj[found] && typeof analysisObj[found].score === 'number' ? analysisObj[found].score : (analysisObj[key]?.score || 0);
+    };
+
     return {
         // Use the Result ID as the unique key for the accordion/main display
         id: result.id, 
+        paperId: result.examAttempt.paper.id,
         examName: result.examAttempt.paper.title,
         date: result.createdAt.toISOString().split('T')[0],
         totalMarks: totalMarks,
         score: result.totalScore, // Send the raw score for processing
         
-        // MOCK data that needs complex logic to be fully dynamic:
+        // dynamic calculated fields:
         timeTaken: timeTaken,
-        accuracy: "N/A", 
+        accuracy: accuracy, 
         rank: "N/A",
         percentile: "N/A",
         
-        // Extract subject scores from the JSON analysis field
-        mathsScore: analysis.MATHS?.score || 0,
-        physicsScore: analysis.PHYSICS?.score || 0,
-        chemistryScore: analysis.CHEMISTRY?.score || 0,
+        // Extract subject scores from the JSON analysis field (case-insensitive)
+        mathsScore: getScore(analysis, 'MATHS'),
+        physicsScore: getScore(analysis, 'PHYSICS'),
+        chemistryScore: getScore(analysis, 'CHEMISTRY'),
         insights: ["Review topics with lower scores.", "Focus on time management."],
     };
 };
