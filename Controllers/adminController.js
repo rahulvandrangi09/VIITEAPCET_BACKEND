@@ -29,11 +29,12 @@ const getFilePath = (imageKey, uploadedFiles) => {
 };
 
 const generateCustomQuestionPaper = async (req, res) => {
-    // ⚠️ IMPORTANT: In a real app, adminId MUST come from an auth token (req.user.id)
-    const { adminId, title, distribution } = req.body; 
+    // 🚨 ADD startTime to destructuring
+    const { adminId, title, distribution, durationHours, startTime } = req.body; 
     
-    if (!adminId || !title || !distribution) {
-        return res.status(400).json({ message: 'Admin ID, title, and distribution are required.' });
+    // 🚨 Update validation to include startTime
+    if (!adminId || !title || !distribution || !startTime) {
+        return res.status(400).json({ message: 'Admin ID, title, distribution, and start time are required.' });
     }
 
     let allSelectedQuestions = [];
@@ -43,6 +44,7 @@ const generateCustomQuestionPaper = async (req, res) => {
         const subjectKeys = Object.keys(distribution).filter(k => Subject[k]);
         
         for (const subjectKey of subjectKeys) {
+            // ... (Existing question selection logic remains the same) ...
             const subject = Subject[subjectKey];
             const subjectDistribution = distribution[subjectKey];
             let selectedSubjectQuestions = [];
@@ -58,7 +60,6 @@ const generateCustomQuestionPaper = async (req, res) => {
                     select: { id: true }
                 });
 
-                // Select up to the target count, using shuffle for randomness
                 const questionsToTake = Math.min(targetCount, availableQuestions.length);
                 const randomSelection = shuffleArray(availableQuestions).slice(0, questionsToTake);
                 
@@ -66,7 +67,6 @@ const generateCustomQuestionPaper = async (req, res) => {
                 totalQuestionsCount += randomSelection.length;
             }
 
-            // Shuffle questions within the subject for order
             shuffleArray(selectedSubjectQuestions);
             allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
         }
@@ -75,15 +75,16 @@ const generateCustomQuestionPaper = async (req, res) => {
              return res.status(404).json({ message: 'Could not find any questions based on the selected distribution.' });
         }
         
-        // Final shuffle of the entire paper
         shuffleArray(allSelectedQuestions);
 
         const newPaper = await prisma.questionPaper.create({
             data: {
                 title: title,
                 createdById: parseInt(adminId),
-                durationHours: 3,
-                totalMarks: totalQuestionsCount * 4, // Assuming 4 marks per question
+                // 🚨 SAVE NEW FIELDS
+                durationHours: parseInt(durationHours) || 3,
+                startTime: new Date(startTime), // Convert ISO string to DateTime object
+                totalMarks: totalQuestionsCount * 4,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({
                         questionId: q.id
@@ -106,7 +107,6 @@ const generateCustomQuestionPaper = async (req, res) => {
         res.status(500).json({ message: 'Internal server error during custom paper generation.' });
     }
 };
-
 
 // --- NEW CORE ADMIN FUNCTION: Preview Generated Paper ---
 const previewQuestionPaper = async (req, res) => {
@@ -239,12 +239,12 @@ const saveQuestionsToDb = async (req, res) => {
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
-    const { adminId, title } = req.body;
+    const { adminId, title, startTime } = req.body;
     
-    if (!adminId || !title) {
-        return res.status(400).json({ message: 'Admin ID and title are required.' });
+    // 🚨 Update validation to include startTime
+    if (!adminId || !title || !startTime) {
+        return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
     }
-
     const DEFAULT_DISTRIBUTION = {
         EASY: 0.30, 
         MEDIUM: 0.40, 
@@ -306,6 +306,7 @@ const generateQuestionPaper = async (req, res) => {
                 title: title,
                 createdById: parseInt(adminId),
                 durationHours: 3,
+                startTime: new Date(startTime),
                 totalMarks: 160,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({

@@ -28,7 +28,7 @@ const comparePassword = (inputPassword, hashedPassword) => {
 const generateToken = (userId, role) => {
     // ⚠️ IMPORTANT: JWT_SECRET must be set in your .env file!
     return jwt.sign({ id: userId, role: role }, process.env.JWT_SECRET, {
-        expiresIn: '1h', // Token expires in 1 hour
+        expiresIn: '5h', // Token expires in 1 hour
     });
 };
 
@@ -134,6 +134,7 @@ const login = async (req, res) => {
     const { studentId, password } = req.body; 
 
     if (!studentId || !password) {
+        console.log(req);
         return res.status(400).json({ message: 'Username (ID) and password are required.' });
     }
 

@@ -9,7 +9,7 @@ const { protect, authorize } = require('./middleware/authMiddleware');
 // Initialize Controllers and Prisma
 const authController = require('./Controllers/authController');
 const adminController = require('./Controllers/adminController');
-const studentController = require('./controllers/studentController');
+const studentController = require('./Controllers/studentController');
 const prisma = new PrismaClient();
 
 dotenv.config();
