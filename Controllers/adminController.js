@@ -645,6 +645,37 @@ const changeAdminPassword = async (req, res) => {
     }
 };
 
+// --- NEW ADMIN FUNCTION: Get Admin Stats ---
+const getAdminStats = async (req, res) => {
+    try {
+        // Total number of students
+        const totalStudents = await prisma.student.count();
+
+        // Upcoming exams: assuming isActive means upcoming
+        const upcomingExams = await prisma.questionPaper.findMany({
+            where: { isActive: true },
+            select: { id: true, title: true, durationHours: true, totalMarks: true, createdAt: true }
+        });
+
+        // Average score of all exams (for 160 marks papers)
+        const averageScoreResult = await prisma.result.aggregate({
+            _avg: { totalScore: true }
+        });
+        const averageScore = averageScoreResult._avg.totalScore || 0;
+
+        res.status(200).json({
+            totalStudents,
+            upcomingExamsCount: upcomingExams.length,
+            upcomingExamsDetails: upcomingExams,
+            averageScore
+        });
+
+    } catch (error) {
+        console.error('Get Admin Stats Error:', error);
+        res.status(500).json({ message: 'Internal server error.' });
+    }
+};
+
 
 module.exports = {
     generateQuestionPaper,
@@ -654,5 +685,6 @@ module.exports = {
     generateCustomQuestionPaper, // 🚨 NEW EXPORT
     previewQuestionPaper, // 🚨 NEW EXPORT
     registerTeacher,
-    changeAdminPassword
+    changeAdminPassword,
+    getAdminStats // 🚨 NEW EXPORT
 };
