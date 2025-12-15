@@ -131,7 +131,7 @@ const registerStudent = async (req, res) => {
  */
 const login = async (req, res) => {
     // We assume 'studentId' holds the login ID/Username for all roles.
-    const {studentId, password } = req.body; 
+    const {username:studentId, password } = req.body; 
 
     if (!studentId || !password) {
         console.log(req);

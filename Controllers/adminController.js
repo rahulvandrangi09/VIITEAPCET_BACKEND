@@ -7,6 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const csv = require('csv-parser');
 const { hashPassword, comparePassword } = require('./authController');
+const LATE_START_WINDOW_MS = 15 * 60 * 1000;
+
 
 // --- Helper for Random Selection ---
 const shuffleArray = (array) => {
@@ -651,10 +653,35 @@ const getAdminStats = async (req, res) => {
         // Total number of students
         const totalStudents = await prisma.student.count();
 
-        // Upcoming exams: assuming isActive means upcoming
+        const now = new Date();
+        // Calculate the maximum end time for the start window that is still valid.
+        // A paper must end its 15-minute grace period AFTER the current time.
+        // Paper.startTime + 15 mins > Now
+        const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS);
+
+
+        // Fetch only papers that are active AND whose 15-minute start window has not expired
         const upcomingExams = await prisma.questionPaper.findMany({
-            where: { isActive: true },
-            select: { id: true, title: true, durationHours: true, totalMarks: true, createdAt: true }
+            where: { 
+                isActive: true, 
+                // 🚨 NEW FILTER: startTime must be greater than (Now - 15 minutes)
+                startTime: {
+                    gt: minStartTime, 
+                },
+            }, 
+            select: { 
+                id: true, 
+                title: true, 
+                durationHours: true, 
+                totalMarks: true,
+                createdAt: true,
+                // 🚨 CRITICAL ADDITION
+                startTime: true, 
+            },
+            // 🚨 NEW SORTING: Nearest upcoming first
+            orderBy: {
+                startTime: 'asc', 
+            }
         });
 
         // Average score of all exams (for 160 marks papers)
