@@ -703,6 +703,95 @@ const getAdminStats = async (req, res) => {
     }
 };
 
+const getExamStats = async (req, res) => {
+    try {
+        const totalStudents = await prisma.student.count();
+
+        const now = new Date();
+
+        // Find ongoing exam: active, now >= startTime, now <= startTime + durationHours
+        const ongoingExam = await prisma.questionPaper.findFirst({
+            where: {
+                isActive: true,
+                startTime: {
+                    lte: now
+                }
+            },
+            select: {
+                id: true,
+                title: true,
+                startTime: true,
+                durationHours: true
+            }
+        });
+
+        if (!ongoingExam) {
+            return res.status(200).json({
+                totalStudents,
+                attemptingStudents: 0,
+                topRankers: []
+            });
+        }
+
+        const examEndTime = new Date(ongoingExam.startTime.getTime() + ongoingExam.durationHours * 60 * 60 * 1000);
+
+        if (now > examEndTime) {
+            // Exam ended, no one attempting
+            return res.status(200).json({
+                totalStudents,
+                attemptingStudents: 0,
+                topRankers: []
+            });
+        }
+
+        // Number attempting: ExamAttempt where paperId=ongoingExam.id and isCompleted=false
+        const attemptingCount = await prisma.examAttempt.count({
+            where: {
+                paperId: ongoingExam.id,
+                isCompleted: false
+            }
+        });
+
+        // Top 5 rankers: from Result, where attempt.paperId=ongoingExam.id, order by totalScore desc, limit 5, include student.fullName
+        const topRankers = await prisma.result.findMany({
+            where: {
+                examAttempt: {
+                    paperId: ongoingExam.id
+                }
+            },
+            orderBy: {
+                totalScore: 'desc'
+            },
+            take: 5,
+            include: {
+                examAttempt: {
+                    include: {
+                        student: {
+                            select: {
+                                fullName: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const rankers = topRankers.map(r => ({
+            name: r.examAttempt.student.fullName,
+            score: r.totalScore
+        }));
+
+        res.status(200).json({
+            totalStudents,
+            attemptingStudents: attemptingCount,
+            topRankers: rankers
+        });
+
+    } catch (error) {
+        console.error('Get Exam Stats Error:', error);
+        res.status(500).json({ message: 'Internal server error.' });
+    }
+};
 
 module.exports = {
     generateQuestionPaper,
@@ -713,5 +802,6 @@ module.exports = {
     previewQuestionPaper, // 🚨 NEW EXPORT
     registerTeacher,
     changeAdminPassword,
-    getAdminStats // 🚨 NEW EXPORT
+    getAdminStats, // 🚨 NEW EXPORT
+    getExamStats, // 🚨 NEW EXPORT
 };
