@@ -88,6 +88,15 @@ const startExam = async (req, res) => {
         const parsedStudentId = parseInt(studentId);
         const now = new Date();
 
+        // Check if student exists
+        const student = await prisma.student.findUnique({
+            where: { id: parsedStudentId }
+        });
+
+        if (!student) {
+            return res.status(404).json({ message: 'Student not found.' });
+        }
+
         const paper = await prisma.questionPaper.findUnique({
             where: { id: parsedPaperId },
             select: {
