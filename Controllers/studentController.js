@@ -176,13 +176,8 @@ const startExam = async (req, res) => {
     }
 };
 
-
-// --- Student Function: Submit attempt and mark as complete ---
 const submitAttempt = async (req, res) => {
-// ... (This function remains unchanged as it doesn't need startTime)
-    const { attemptId, answers } = req.body; // Answers structure: { questionId: 'answer text', ... }
-
-    // Debug: log arrival of submit call
+    const { attemptId, answers } = req.body; 
     try {
         console.log('submitAttempt - received request', { attemptId: attemptId, answersType: typeof answers, answersKeys: answers ? Object.keys(answers).slice(0,20) : [] });
     } catch (e) {
@@ -254,11 +249,14 @@ const submitAttempt = async (req, res) => {
         for (const q of questions) {
             const qId = q.id.toString();
             // Normalize stored answer from client
+
             const given = answers?.[qId];
 
             // Determine correctness robustly
             let isCorrect = false;
-
+            // console.log("correct ans: ",q.correctAnswer);
+            // console.log("given: ",given);
+            // console.log("options: ",q.options);
             try {
                 // If correctAnswer stores index (e.g., '0' or '1') compare to given
                 if (String(q.correctAnswer) === String(given)) {
@@ -266,8 +264,8 @@ const submitAttempt = async (req, res) => {
                 } else {
                     // If options array exists, compare selected option value to correctAnswer
                     if (Array.isArray(q.options) && given !== undefined) {
-                        const selectedValue = q.options[Number(given)];
-                        if (String(selectedValue) === String(q.correctAnswer)) {
+                        const selectedValue = given;
+                        if (selectedValue === (String(q.correctAnswer).charAt(0).charCodeAt(0)-"A".charCodeAt(0))) {
                             isCorrect = true;
                         }
                     }

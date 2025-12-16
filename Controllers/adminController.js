@@ -83,10 +83,9 @@ const generateCustomQuestionPaper = async (req, res) => {
             data: {
                 title: title,
                 createdById: parseInt(adminId),
-                // 🚨 SAVE NEW FIELDS
                 durationHours: parseInt(durationHours) || 3,
-                startTime: new Date(startTime), // Convert ISO string to DateTime object
-                totalMarks: totalQuestionsCount * 4,
+                startTime: new Date(startTime),
+                totalMarks: totalQuestionsCount,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({
                         questionId: q.id
@@ -110,7 +109,6 @@ const generateCustomQuestionPaper = async (req, res) => {
     }
 };
 
-// --- NEW CORE ADMIN FUNCTION: Preview Generated Paper ---
 const previewQuestionPaper = async (req, res) => {
     const { paperId } = req.params;
     
@@ -120,7 +118,7 @@ const previewQuestionPaper = async (req, res) => {
             include: {
                 paperQuestions: {
                     include: {
-                        question: true // Fetch the full question details
+                        question: true 
                     }
                 }
             }
@@ -130,18 +128,16 @@ const previewQuestionPaper = async (req, res) => {
             return res.status(404).json({ message: 'Question paper not found.' });
         }
 
-        // Map the structure for the frontend preview
         const questions = paper.paperQuestions
             .map(pq => ({
                 id: pq.question.id,
                 text: pq.question.text,
-                options: pq.question.options, // Already String[] from the database
+                options: pq.question.options, 
                 correctAnswer: pq.question.correctAnswer,
                 subject: pq.question.subject,
                 difficulty: pq.question.difficulty,
-                // Image URLs are also available here
             }))
-            .sort((a, b) => a.id - b.id); // Sort by ID for stable order
+            .sort((a, b) => a.id - b.id); 
 
         res.status(200).json({
             title: paper.title,
@@ -154,45 +150,30 @@ const previewQuestionPaper = async (req, res) => {
     }
 };
 
-// --- TEACHER FUNCTION: Save Questions with Rich Text and Images ---
 const saveQuestionsToDb = async (req, res) => {
     if (!req.body.questions) {
-        // Clean up files if the required JSON payload is missing
         if (req.files) {
              req.files.forEach(file => fs.unlinkSync(file.path));
         }
         return res.status(400).json({ message: "No questions payload found in request body. Upload failed." });
     }
-
     let uploadedFiles = req.files || [];
     let questionsToSave = [];
 
     try {
         const questionsPayload = JSON.parse(req.body.questions);
         
-        // 1. Map frontend payload to your Prisma Question model structure
         for (const q of questionsPayload) {
-            
-            // Validate ENUMs (using placeholders since the rich text frontend doesn't supply them yet)
-            const subject = Subject['PHYSICS']; // Default to PHYSICS
-            const difficulty = Difficulty['MEDIUM']; // Default to MEDIUM
-
-            // Combine all four options into the String[] array required by your schema
+            const subject = q.subject; 
+            const difficulty = q.difficulty;
             const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD];
-
             questionsToSave.push({
-                // text field holds the rich text question content
                 text: q.question, 
-                // options field holds the array of options (rich text strings)
                 options: optionsArray, 
                 correctAnswer: q.answer, // e.g., "Option A"
-                
-                // Required foreign key and ENUMs
                 uploadedById: DEFAULT_UPLOADER_ID, 
                 subject: subject,
                 difficulty: difficulty,
-
-                // Image URL fields (paths to files saved by Multer)
                 questionImageUrl: getFilePath(q.questionImageKey, uploadedFiles),
                 optionAImageUrl: getFilePath(q.optionAImageKey, uploadedFiles),
                 optionBImageUrl: getFilePath(q.optionBImageKey, uploadedFiles),
@@ -208,7 +189,6 @@ const saveQuestionsToDb = async (req, res) => {
             }
             return res.status(400).json({ message: "No valid questions were processed to save." });
         }
-
         // 2. Save to Database using Prisma
         const result = await prisma.question.createMany({
             data: questionsToSave,
@@ -222,8 +202,6 @@ const saveQuestionsToDb = async (req, res) => {
 
     } catch (error) {
         console.error("❌ Database save failed:", error);
-
-        // 3. Clean up uploaded files if DB operation failed
         if (uploadedFiles.length > 0) {
             uploadedFiles.forEach(file => {
                 try {
@@ -335,8 +313,6 @@ const generateQuestionPaper = async (req, res) => {
     }
 };
 
-// --- CORE ADMIN FUNCTION: Send Mass Results Mails ---
-// --- Helper: Maps Answer String to Index ---
 const answerMap = {
     'Option A': 0,
     'Option B': 1,
@@ -380,7 +356,7 @@ const sendResultsMails = async (req, res) => {
             };
             return acc;
         }, {});
-
+        
 
         const completedAttempts = await prisma.examAttempt.findMany({
             where: { paperId: parseInt(paperId), isCompleted: true },
@@ -396,7 +372,7 @@ const sendResultsMails = async (req, res) => {
         const allScores = [];
 
         for (const attempt of completedAttempts) {
-            const studentAnswers = attempt.answers || {}; // { questionId: selectedOptionIndex }
+            const studentAnswers = attempt.answers || {}; 
             let totalScore = 0;
             let analysis = { PHYSICS: { score: 0, total: 40, weakAreas: [] }, CHEMISTRY: { score: 0, total: 40, weakAreas: [] }, MATHS: { score: 0, total: 80, weakAreas: [] } }; // Initialize analysis
 
@@ -404,11 +380,10 @@ const sendResultsMails = async (req, res) => {
             for (const qId in studentAnswers) {
                 const questionData = correctAnswersMap[parseInt(qId)];
                 if (!questionData) continue; 
-
                 const studentSelectionIndex = studentAnswers[qId];
                 const subject = questionData.subject;
                 const correctIndex = questionData.correctIndex;
-
+                
                 if (studentSelectionIndex === correctIndex) {
                     totalScore += 1; // Assuming 1 mark per correct answer
                     // Update subject score (assuming subject keys match analysis keys)
@@ -510,15 +485,15 @@ const uploadQuestions = async (req, res) => {
                     try {
                         const options = [data.optionA, data.optionB, data.optionC, data.optionD]
                             .filter(o => o && o.trim() !== ''); // Filter out empty options
-
                         questionsToCreate.push({
                             text: data.text,
                             options: options,
-                            correctAnswer: data.correctAnswer || '',
+                            correctAnswer: options[0],
                             subject: Subject[subject.toUpperCase()], 
                             difficulty: Difficulty[difficulty.toUpperCase()], 
                             uploadedById: parseInt(teacherId),
                         });
+                        console.log(options[0]);
                         validCount++;
                     } catch (e) {
                         console.error('Data structure error in row:', data, e.message);
