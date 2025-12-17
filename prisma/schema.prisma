@@ -105,6 +105,9 @@ refreshToken              String?
 createdAt                 DateTime        @default(now())
 updatedAt                 DateTime        @updatedAt
 
+isSafe                    Boolean         @default(false)
+isAttemptingExam          Boolean         @default(false)
+
 examAttempts              ExamAttempt[]
 }
 
