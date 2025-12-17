@@ -731,16 +731,77 @@ const getExamStats = async (req, res) => {
                 id: true,
                 title: true,
                 startTime: true,
-                durationHours: true
+                durationHours: true,
+                totalMarks: true
             }
         });
 
         if (!ongoingExam) {
-            return res.status(200).json({
-                totalStudents,
-                attemptingStudents: 0,
-                topRankers: []
+            // Find the most recent exam that has been attempted
+            const previousExam = await prisma.questionPaper.findFirst({
+                where: {
+                    examAttempts: {
+                        some: {} // has at least one attempt
+                    }
+                },
+                orderBy: {
+                    startTime: 'desc'
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    startTime: true,
+                    durationHours: true,
+                    totalMarks: true
+                }
             });
+
+            if (previousExam) {
+                // Get top rankers for the previous exam
+                const topRankers = await prisma.result.findMany({
+                    where: {
+                        examAttempt: {
+                            paperId: previousExam.id
+                        }
+                    },
+                    orderBy: {
+                        totalScore: 'desc'
+                    },
+                    take: 5,
+                    include: {
+                        examAttempt: {
+                            include: {
+                                student: {
+                                    select: {
+                                        fullName: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                const rankers = topRankers.map(r => ({
+                    name: r.examAttempt.student.fullName,
+                    score: r.totalScore
+                }));
+
+                return res.status(200).json({
+                    message: 'No ongoing exam. Showing details of the last attempted exam.',
+                    totalStudents,
+                    attemptingStudents: 0,
+                    topRankers: rankers,
+                    currentExam: previousExam
+                });
+            } else {
+                return res.status(200).json({
+                    message: 'No ongoing exam and no previous attempted exams.',
+                    totalStudents,
+                    attemptingStudents: 0,
+                    topRankers: [],
+                    currentExam: null
+                });
+            }
         }
 
         const examEndTime = new Date(ongoingExam.startTime.getTime() + ongoingExam.durationHours * 60 * 60 * 1000);
@@ -750,15 +811,15 @@ const getExamStats = async (req, res) => {
             return res.status(200).json({
                 totalStudents,
                 attemptingStudents: 0,
-                topRankers: []
+                topRankers: [],
+                currentExam: ongoingExam
             });
         }
 
-        // Number attempting: ExamAttempt where paperId=ongoingExam.id and isCompleted=false
-        const attemptingCount = await prisma.examAttempt.count({
+        // Number attempting: students with isAttemptingExam = true
+        const attemptingCount = await prisma.student.count({
             where: {
-                paperId: ongoingExam.id,
-                isCompleted: false
+                isAttemptingExam: true
             }
         });
 
@@ -794,7 +855,8 @@ const getExamStats = async (req, res) => {
         res.status(200).json({
             totalStudents,
             attemptingStudents: attemptingCount,
-            topRankers: rankers
+            topRankers: rankers,
+            currentExam: ongoingExam
         });
 
     } catch (error) {

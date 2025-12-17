@@ -97,6 +97,12 @@ const startExam = async (req, res) => {
             return res.status(404).json({ message: 'Student not found.' });
         }
 
+        // Update student's isAttemptingExam to true
+        await prisma.student.update({
+            where: { id: parsedStudentId },
+            data: { isAttemptingExam: true }
+        });
+        
         const paper = await prisma.questionPaper.findUnique({
             where: { id: parsedPaperId },
             select: {
@@ -324,6 +330,12 @@ const submitAttempt = async (req, res) => {
                 totalScore: totalCorrect,
                 analysisJson: analysis
             }
+        });
+
+        // Reset student's isAttemptingExam to false
+        await prisma.student.update({
+            where: { id: attempt.studentId },
+            data: { isAttemptingExam: false }
         });
 
         res.status(200).json({
