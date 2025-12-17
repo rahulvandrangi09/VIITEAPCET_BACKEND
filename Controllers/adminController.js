@@ -33,7 +33,7 @@ const getFilePath = (imageKey, uploadedFiles) => {
 const generateCustomQuestionPaper = async (req, res) => {
     // 🚨 ADD startTime to destructuring
     const { adminId, title, distribution, durationHours, startTime } = req.body; 
-    
+    console.log(req.body);
     // 🚨 Update validation to include startTime
     if (!adminId || !title || !distribution || !startTime) {
         return res.status(400).json({ message: 'Admin ID, title, distribution, and start time are required.' });
@@ -44,7 +44,10 @@ const generateCustomQuestionPaper = async (req, res) => {
 
     try {
         const subjectKeys = Object.keys(distribution).filter(k => Subject[k]);
-        
+        console.log(Subject["CHEMISTRY"]);
+        console.log(Subject["PHYSICS"]);
+        console.log(Subject["MATHEMATICS"]);
+        console.log(Object.keys(distribution));
         for (const subjectKey of subjectKeys) {
             // ... (Existing question selection logic remains the same) ...
             const subject = Subject[subjectKey];

@@ -3,7 +3,12 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const bcrypt = require('bcryptjs'); 
 const jwt = require('jsonwebtoken'); 
+const crypto = require('crypto');
+const { sendMail, createRegistrationMail } = require('../utils/mail');
 // NOTE: Make sure to install these: npm install bcryptjs jsonwebtoken
+
+// Salt rounds used for bcrypt hashing when creating student passwords
+const SALT_ROUNDS = 10;
 
 // --- Security Helper Functions ---
 
@@ -207,4 +212,27 @@ module.exports = {
     hashPassword,
     comparePassword,
     generateToken, // Exported in case you need it for generating reset tokens later
+};
+
+/**
+ * Generates a secure random password.
+ */
+const generatePassword = (length = 10) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
+    let password = '';
+    const bytes = crypto.randomBytes(length);
+    for (let i = 0; i < length; i++) {
+        password += chars[bytes[i] % chars.length];
+    }
+    return password;
+};
+
+/**
+ * Generates a semi-readable unique student ID.
+ */
+const generateStudentId = () => {
+    const prefix = 'VIIT';
+    const ts = Date.now().toString().slice(-6);
+    const rand = Math.floor(100 + Math.random() * 900); // 3-digit random
+    return `${prefix}${ts}${rand}`;
 };

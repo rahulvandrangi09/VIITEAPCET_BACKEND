@@ -25,9 +25,9 @@ HARD     // 3
 }
 
 enum Subject {
-PHYSICS
-CHEMISTRY
-MATHS
+  PHYSICS
+  CHEMISTRY
+  MATHEMATICS
 }
 
 enum Stream {
