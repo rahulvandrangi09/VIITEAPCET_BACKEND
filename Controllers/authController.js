@@ -135,69 +135,79 @@ const registerStudent = async (req, res) => {
  * Handles the login for all user types (Student, Teacher, Admin).
  */
 const login = async (req, res) => {
-    // We assume 'studentId' holds the login ID/Username for all roles.
-    const {username:studentId, password } = req.body; 
+    // Accept either an email or a studentId/unique id as `username` in the request body
+    const { username, password } = req.body;
 
-    if (!studentId || !password) {
-        console.log(req);
-        return res.status(400).json({ message: 'Username (ID) and password are required.' });
+    if (!username || !password) {
+        return res.status(400).json({ message: 'Username and password are required.' });
     }
 
     try {
         let user = null;
 
-        // 1. Try to find the user in the TEACHER/ADMIN table (User model)
-        // Since the User model doesn't have 'studentId', we must rely on 'email' or 'id' for Admin/Teacher login.
-        // ASSUMPTION: Admin/Teacher log in using their UNIQUE EMAIL as the "studentId" input.
-        user = await prisma.user.findUnique({
-            where: { email: studentId }, 
-        });
-
-        // 2. If not found in the User table, try to find the user in the STUDENT table
-        if (!user) {
-            user = await prisma.student.findUnique({
-                where: { studentId: studentId }, // This field exists on the Student model
-            });
-            
-            // If we found a student, we manually attach the 'role' property 
-            // since the Student model doesn't have it defined in the schema.
+        // If input looks like an email, try User -> Student by email
+        if (typeof username === 'string' && username.includes('@')) {
+            user = await prisma.user.findUnique({ where: { email: username } });
+            if (!user) {
+                user = await prisma.student.findUnique({ where: { email: username } });
+                if (user) user.role = 'STUDENT';
+            }
+        } else {
+            // Try Student by studentId first (common case)
+            user = await prisma.student.findUnique({ where: { studentId: username } });
             if (user) {
-                // IMPORTANT: This role must match your Role enum ('STUDENT', 'TEACHER', 'ADMIN')
-                user.role = 'STUDENT'; 
+                user.role = 'STUDENT';
+            } else {
+                // Fallbacks for teacher/admin: try User by email, then by id (if numeric)
+                user = await prisma.user.findUnique({ where: { email: username } });
+
+                if (!user) {
+                    const numericId = parseInt(username, 10);
+                    if (!isNaN(numericId)) {
+                        user = await prisma.user.findUnique({ where: { id: numericId } });
+                    }
+                }
             }
         }
 
-        // --- Final Check ---
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials or user not found.' });
         }
 
-        // 3. Compare the provided password with the stored hash
+        if (!user.password) {
+            return res.status(401).json({ message: 'User has no password set.' });
+        }
+
         const isPasswordValid = await comparePassword(password, user.password);
 
         if (!isPasswordValid) {
             return res.status(401).json({ message: 'Invalid credentials. Incorrect password.' });
         }
 
-        // 4. Generate a JWT token using the retrieved/attached role
-        const token = generateToken(user.id, user.role);
+        // Ensure a role exists (students are assigned above)
+        const role = user.role || 'STUDENT';
 
-        // 5. Successful Login Response
-        res.status(200)
-        .cookie('token', token, {
+        const token = generateToken(user.id, role);
+
+        // Set cookie secure only in production; allow local dev/testing otherwise
+        const cookieOptions = {
             httpOnly: true,
-            secure: true,
-        })
-        .json({
-            message: `Login successful for role: ${user.role}`,
-            token: token,
-            user: {
-                id: user.id,
-                fullName: user.fullName,
-                email: user.email,
-                role: user.role, // Will be 'ADMIN', 'TEACHER', or manually attached 'STUDENT'
-            },
-        });
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+        };
+
+        res.status(200)
+            .cookie('token', token, cookieOptions)
+            .json({
+                message: `Login successful for role: ${role}`,
+                token,
+                user: {
+                    id: user.id,
+                    fullName: user.fullName,
+                    email: user.email,
+                    role,
+                },
+            });
 
     } catch (error) {
         console.error('Login Error:', error);

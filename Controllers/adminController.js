@@ -1,7 +1,7 @@
 // controllers/adminController.js
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { sendMail, createResultMail } = require('../utils/mail');
+const { sendMail, createResultMail, createRegistrationMail } = require('../utils/mail');
 const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
@@ -545,35 +545,67 @@ const uploadQuestions = async (req, res) => {
 };
 
 const registerTeacher = async (req, res) => {
-    // ⚠️ In a real app, ensure this function is only callable by an authenticated ADMIN!
-    const { fullName, email, studentId, temporaryPassword } = req.body; 
+    // ⚠️ In a real app, ensure this function is only callable by an authenticated ADMIN! (use auth middleware)
+    const { fullName, email, studentId, temporaryPassword } = req.body;
 
-    if (!fullName || !email || !studentId || !temporaryPassword) {
-        return res.status(400).json({ message: 'All fields (name, email, ID, temp password) are required.' });
+    if (!fullName || !email || !temporaryPassword) {
+        return res.status(400).json({ message: 'fullName, email and temporaryPassword are required.' });
     }
 
     try {
-        const hashedPassword = await hashPassword(temporaryPassword); // Use helper
+        // 1. Ensure email is not already used by another User
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) {
+            return res.status(409).json({ message: 'A user with this email already exists.' });
+        }
+
+        // 2. If a studentId (username) was provided, make sure it doesn't collide with existing students
+        if (studentId) {
+            const existingStudent = await prisma.student.findUnique({ where: { studentId } });
+            if (existingStudent) {
+                return res.status(409).json({ message: 'The provided Login ID is already in use by a student. Choose a different ID.' });
+            }
+        }
+
+        // 3. Hash the temporary password and create the teacher user
+        const hashedPassword = await hashPassword(temporaryPassword);
 
         const newTeacher = await prisma.user.create({
             data: {
-                fullName: fullName,
-                email: email,
-                studentId: studentId, // Unique ID for login
+                fullName,
+                email,
                 password: hashedPassword,
-                role: 'TEACHER', // Assuming 'TEACHER' role in Prisma schema
+                role: 'TEACHER',
             },
         });
+        
+        /*
+            Live monitoring.
+            Reports 
+            Add teacher -> idi aipoindi
+            amazon vouchers
+            Ranks
+            // veetilo 
+        */
+        // 4. Prepare login identifier to send via email: use email as primary login for teachers
+        const loginId = email;
 
+        // 5. Send registration email (best-effort; sendMail logs if SMTP not configured)
+        try {
+            const emailContent = createRegistrationMail(fullName, loginId, temporaryPassword);
+            sendMail(email, 'VIIT Portal - Teacher Registration', emailContent);
+        } catch (mailErr) {
+            console.error('Failed to send registration email to teacher:', mailErr);
+        }
+
+        // 6. Respond with created user info and guidance about login
         res.status(201).json({
-            message: `Teacher ${fullName} created successfully. ID: ${studentId}`,
+            message: `Teacher ${fullName} created successfully. Use email as login ID: ${loginId}`,
             userId: newTeacher.id,
+            loginIdProvidedByAdmin: studentId || null,
         });
 
     } catch (error) {
-        if (error.code === 'P2002') { 
-            return res.status(409).json({ message: 'A user with this ID or email already exists.' });
-        }
         console.error('Teacher Registration Error:', error);
         res.status(500).json({ message: 'Internal server error during teacher registration.' });
     }
