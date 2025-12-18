@@ -472,7 +472,7 @@ const mapResultData = (result) => {
         percentile: "N/A",
         
         // Extract subject scores from the JSON analysis field (case-insensitive)
-        mathsScore: getScore(analysis, 'MATHS'),
+        mathsScore: getScore(analysis, 'MATHEMATICS'),
         physicsScore: getScore(analysis, 'PHYSICS'),
         chemistryScore: getScore(analysis, 'CHEMISTRY'),
         insights: ["Review topics with lower scores.", "Focus on time management."],
