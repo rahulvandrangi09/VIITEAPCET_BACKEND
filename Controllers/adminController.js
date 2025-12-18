@@ -728,6 +728,9 @@ const getExamStats = async (req, res) => {
                     lte: now
                 }
             },
+            orderBy: {
+                startTime: 'desc'
+            },
             select: {
                 id: true,
                 title: true,
@@ -759,32 +762,27 @@ const getExamStats = async (req, res) => {
 
             if (previousExam) {
                 // Get top rankers for the previous exam
-                const topRankers = await prisma.result.findMany({
+                const topRankers = await prisma.examAttempt.findMany({
                     where: {
-                        examAttempt: {
-                            paperId: previousExam.id
-                        }
+                        paperId: previousExam.id,
+                        isCompleted: true
                     },
                     orderBy: {
-                        totalScore: 'desc'
+                        score: 'desc'
                     },
                     take: 5,
                     include: {
-                        examAttempt: {
-                            include: {
-                                student: {
-                                    select: {
-                                        fullName: true
-                                    }
-                                }
+                        student: {
+                            select: {
+                                fullName: true
                             }
                         }
                     }
                 });
 
                 const rankers = topRankers.map(r => ({
-                    name: r.examAttempt.student.fullName,
-                    score: r.totalScore
+                    name: r.student.fullName,
+                    score: r.score
                 }));
 
                 return res.status(200).json({
@@ -808,11 +806,35 @@ const getExamStats = async (req, res) => {
         const examEndTime = new Date(ongoingExam.startTime.getTime() + ongoingExam.durationHours * 60 * 60 * 1000);
 
         if (now > examEndTime) {
-            // Exam ended, no one attempting
+            // Exam ended, fetch top rankers for the completed exam
+            const topRankers = await prisma.examAttempt.findMany({
+                where: {
+                    paperId: ongoingExam.id,
+                    isCompleted: true
+                },
+                orderBy: {
+                    score: 'desc'
+                },
+                take: 5,
+                include: {
+                    student: {
+                        select: {
+                            fullName: true
+                        }
+                    }
+                }
+            });
+
+            const rankers = topRankers.map(r => ({
+                name: r.student.fullName,
+                score: r.score
+            }));
+
             return res.status(200).json({
+                message: 'Exam has ended. Showing final results.',
                 totalStudents,
                 attemptingStudents: 0,
-                topRankers: [],
+                topRankers: rankers,
                 currentExam: ongoingExam
             });
         }
@@ -824,36 +846,32 @@ const getExamStats = async (req, res) => {
             }
         });
 
-        // Top 5 rankers: from Result, where attempt.paperId=ongoingExam.id, order by totalScore desc, limit 5, include student.fullName
-        const topRankers = await prisma.result.findMany({
+        // Top 5 rankers: from ExamAttempt where paperId=ongoingExam.id, isCompleted=true, order by score desc, limit 5, include student.fullName
+        const topRankers = await prisma.examAttempt.findMany({
             where: {
-                examAttempt: {
-                    paperId: ongoingExam.id
-                }
+                paperId: ongoingExam.id,
+                isCompleted: true
             },
             orderBy: {
-                totalScore: 'desc'
+                score: 'desc'
             },
             take: 5,
             include: {
-                examAttempt: {
-                    include: {
-                        student: {
-                            select: {
-                                fullName: true
-                            }
-                        }
+                student: {
+                    select: {
+                        fullName: true
                     }
                 }
             }
         });
 
         const rankers = topRankers.map(r => ({
-            name: r.examAttempt.student.fullName,
-            score: r.totalScore
+            name: r.student.fullName,
+            score: r.score
         }));
         console.log(ongoingExam,rankers,attemptingCount,totalStudents);
         res.status(200).json({
+            message: 'Exam is currently ongoing.',
             totalStudents,
             attemptingStudents: attemptingCount,
             topRankers: rankers,
