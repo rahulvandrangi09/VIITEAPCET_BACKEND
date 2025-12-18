@@ -291,6 +291,7 @@ const generateQuestionPaper = async (req, res) => {
                 durationHours: 3,
                 startTime: new Date(startTime),
                 totalMarks: 160,
+                isActive: true,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({
                         questionId: q.id
@@ -851,7 +852,7 @@ const getExamStats = async (req, res) => {
             name: r.examAttempt.student.fullName,
             score: r.totalScore
         }));
-
+        console.log(ongoingExam,rankers,attemptingCount,totalStudents);
         res.status(200).json({
             totalStudents,
             attemptingStudents: attemptingCount,
