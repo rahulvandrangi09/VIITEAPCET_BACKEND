@@ -82,6 +82,7 @@ app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN', 'TEACHER'
 app.get('/api/admin/preview-paper/:paperId', protect, authorize('ADMIN', 'TEACHER'), adminController.previewQuestionPaper);
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
+app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);
 
 // --- TEACHER ROUTES ---
 // Applied upload.single('csvFile') middleware to handle the file upload

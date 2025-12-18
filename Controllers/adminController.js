@@ -884,6 +884,140 @@ const getExamStats = async (req, res) => {
     }
 };
 
+// --- Get Comprehensive Reports ---
+const getReports = async (req, res) => {
+    try {
+        // Fetch all question papers with related data
+        const papers = await prisma.questionPaper.findMany({
+            include: {
+                examAttempts: {
+                    include: {
+                        student: true,
+                        result: true,
+                    }
+                },
+                paperQuestions: {
+                    include: {
+                        question: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        // Process each paper to calculate comprehensive statistics
+        const reports = await Promise.all(papers.map(async (paper) => {
+            const attempts = paper.examAttempts;
+            const completedAttempts = attempts.filter(a => a.isCompleted);
+            
+            // Calculate total students who started the exam (count UNIQUE students only)
+            const totalStudents = await prisma.student.count();
+            const registeredForExam = totalStudents; // In future, can be filtered by specific registration
+            
+            // Count unique students who attempted (not total attempt records)
+            const uniqueStudentIds = new Set(attempts.map(a => a.studentId));
+            const attemptedCount = uniqueStudentIds.size;
+            
+            // Count unique students who completed
+            const uniqueCompletedStudentIds = new Set(completedAttempts.map(a => a.studentId));
+            const completedCount = uniqueCompletedStudentIds.size;
+            
+            // Calculate average score
+            const totalScore = completedAttempts.reduce((sum, attempt) => sum + attempt.score, 0);
+            const avgScore = completedCount > 0 ? (totalScore / completedCount).toFixed(1) : 0;
+            
+            // Calculate subject-wise statistics
+            const subjectStats = {
+                PHYSICS: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 },
+                CHEMISTRY: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 },
+                MATHEMATICS: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 }
+            };
+            
+            // Count questions per subject (each question is 1 mark)
+            paper.paperQuestions.forEach(pq => {
+                const subject = pq.question.subject;
+                if (subjectStats[subject]) {
+                    subjectStats[subject].totalQuestions++;
+                    subjectStats[subject].maxMarks++; // Each question = 1 mark
+                }
+            });
+            
+            // Calculate subject-wise scores from completed attempts
+            completedAttempts.forEach(attempt => {
+                if (attempt.result && attempt.result.analysisJson) {
+                    const analysis = attempt.result.analysisJson;
+                    
+                    ['PHYSICS', 'CHEMISTRY', 'MATHEMATICS'].forEach(subject => {
+                        // Check both uppercase and lowercase keys for compatibility
+                        const subjectData = analysis[subject] || analysis[subject.toLowerCase()];
+                        if (subjectData && typeof subjectData.score !== 'undefined') {
+                            subjectStats[subject].totalScore += subjectData.score || 0;
+                            subjectStats[subject].count++;
+                        }
+                    });
+                }
+            });
+            
+            // Calculate averages for each subject (only include subjects that exist in the paper)
+            const subjectAnalytics = Object.entries(subjectStats)
+                .filter(([subject, stats]) => stats.totalQuestions > 0)
+                .map(([subject, stats]) => ({
+                    subject,
+                    avgScore: stats.count > 0 ? (stats.totalScore / stats.count).toFixed(1) : '0',
+                    maxMarks: stats.maxMarks,
+                    totalQuestions: stats.totalQuestions
+                }));
+            
+            // Calculate feedback score (weighted: 30% completion rate + 70% performance)
+            const completionRate = attemptedCount > 0 ? (completedCount / attemptedCount) * 100 : 0;
+            const scorePercentage = paper.totalMarks > 0 && completedCount > 0 
+                ? (parseFloat(avgScore) / paper.totalMarks) * 100 
+                : 0;
+            const feedbackScore = ((completionRate * 0.3) + (scorePercentage * 0.7)) / 10;
+            
+            // Calculate attempt percentage (students who started vs total registered)
+            const attemptPercentage = registeredForExam > 0 
+                ? ((attemptedCount / registeredForExam) * 100).toFixed(0) 
+                : '0';
+            
+            return {
+                id: paper.id,
+                title: paper.title,
+                startDate: paper.startTime,
+                totalMarks: paper.totalMarks,
+                durationHours: paper.durationHours,
+                isActive: paper.isActive,
+                feedback: completedCount > 0 ? feedbackScore.toFixed(1) : '0.0',
+                totalStudents: attemptedCount, // Students who started the exam
+                avgScore: completedCount > 0 ? avgScore : '0',
+                status: paper.isActive ? 'Active' : 'Complete',
+                registered: registeredForExam, // Total students in system
+                attempted: attemptedCount, // Students who started
+                completed: completedCount, // Students who finished
+                attemptPercentage: attemptPercentage,
+                subjectAnalytics: subjectAnalytics,
+                createdAt: paper.createdAt,
+                totalQuestions: paper.paperQuestions.length
+            };
+        }));
+
+        res.status(200).json({
+            success: true,
+            reports: reports
+        });
+
+    } catch (error) {
+        console.error('Get Reports Error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Failed to fetch reports.',
+            error: error.message 
+        });
+    }
+};
+
 module.exports = {
     generateQuestionPaper,
     sendResultsMails,
@@ -895,4 +1029,5 @@ module.exports = {
     changeAdminPassword,
     getAdminStats, // 🚨 NEW EXPORT
     getExamStats, // 🚨 NEW EXPORT
+    getReports, // 🚨 NEW EXPORT FOR REPORTS
 };
