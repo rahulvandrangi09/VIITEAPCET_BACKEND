@@ -160,7 +160,6 @@ const login = async (req, res) => {
             } else {
                 // Fallbacks for teacher/admin: try User by email, then by id (if numeric)
                 user = await prisma.user.findUnique({ where: { email: username } });
-
                 if (!user) {
                     const numericId = parseInt(username, 10);
                     if (!isNaN(numericId)) {

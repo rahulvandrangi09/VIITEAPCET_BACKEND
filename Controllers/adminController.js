@@ -574,7 +574,7 @@ const registerTeacher = async (req, res) => {
         const newTeacher = await prisma.user.create({
             data: {
                 fullName,
-                email,
+                email:studentId,
                 password: hashedPassword,
                 role: 'TEACHER',
             },
@@ -589,7 +589,7 @@ const registerTeacher = async (req, res) => {
             // veetilo 
         */
         // 4. Prepare login identifier to send via email: use email as primary login for teachers
-        const loginId = email;
+        const loginId = studentId;
 
         // 5. Send registration email (best-effort; sendMail logs if SMTP not configured)
         try {
