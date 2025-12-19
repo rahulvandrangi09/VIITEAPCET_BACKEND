@@ -1,7 +1,7 @@
 // server.js
 const express = require('express');
 const dotenv = require('dotenv');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./utils/prisma');
 const multer = require('multer'); // <--- Multer for file uploads
 const path = require('path');     // <--- Path for file paths
 const fs = require('fs')
@@ -10,7 +10,6 @@ const { protect, authorize } = require('./middleware/authMiddleware');
 const authController = require('./Controllers/authController');
 const adminController = require('./Controllers/adminController');
 const studentController = require('./Controllers/studentController');
-const prisma = new PrismaClient();
 
 dotenv.config();
 

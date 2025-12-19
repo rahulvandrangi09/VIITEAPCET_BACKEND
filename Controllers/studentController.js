@@ -1,6 +1,6 @@
 // controllers/studentController.js
-const { PrismaClient, Subject } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { Subject } = require('@prisma/client');
+const prisma = require('../utils/prisma');
 
 // Constant for the 15-minute grace period (in milliseconds)
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;

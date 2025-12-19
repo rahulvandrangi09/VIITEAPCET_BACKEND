@@ -1,7 +1,6 @@
 // Controllers/studentAuth.js
 
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 const bcrypt = require('bcrypt');
 
 // Ensure you have nodemailer installed and utils/mail.js is present

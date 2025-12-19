@@ -1,6 +1,5 @@
 // controllers/adminController.js
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../utils/prisma');
 const { sendMail, createResultMail, createRegistrationMail } = require('../utils/mail');
 const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
