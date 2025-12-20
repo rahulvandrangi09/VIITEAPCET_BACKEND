@@ -114,7 +114,7 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
             <ul style="list-style-type: none; padding: 0;">
                 <li style="margin-bottom: 5px;">Physics: <strong>${analysis.PHYSICS.score}/${analysis.PHYSICS.total}</strong></li>
                 <li style="margin-bottom: 5px;">Chemistry: <strong>${analysis.CHEMISTRY.score}/${analysis.CHEMISTRY.total}</strong></li>
-                <li style="margin-bottom: 5px;">Maths: <strong>${analysis.MATHS.score}/${analysis.MATHS.total}</strong></li>
+                <li style="margin-bottom: 5px;">Maths: <strong>${analysis.MATHEMATICS.score}/${analysis.MATHEMATICS.total}</strong></li>
             </ul>
 
             ${weaknessHtml}

@@ -326,122 +326,47 @@ const answerMap = {
 // --- CORE ADMIN FUNCTION: Send Mass Results Mails (Updated Scoring Logic) ---
 const sendResultsMails = async (req, res) => {
     const { paperId } = req.body;
-    
-    if (!paperId) {
-        return res.status(400).json({ message: 'Paper ID is required to send results.' });
-    }
+    if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
 
     try {
-        // 1. Fetch the Paper and ALL its Questions with correct answers
-        const paperDetails = await prisma.questionPaper.findUnique({
+        const paper = await prisma.questionPaper.findUnique({
             where: { id: parseInt(paperId) },
             include: {
-                paperQuestions: {
-                    include: {
-                        question: {
-                            select: { id: true, correctAnswer: true, subject: true }
-                        }
-                    }
+                examAttempts: {
+                    where: { isCompleted: true },
+                    include: { student: true, result: true }
                 }
             }
         });
 
-        if (!paperDetails) {
-            return res.status(404).json({ message: 'Question paper not found.' });
-        }
-        
-        // Map questions to a dictionary for quick lookup: { questionId: { answerIndex, subject } }
-        const correctAnswersMap = paperDetails.paperQuestions.reduce((acc, pq) => {
-            const q = pq.question;
-            acc[q.id] = {
-                correctIndex: answerMap[q.correctAnswer] !== undefined ? answerMap[q.correctAnswer] : null,
-                subject: q.subject,
-            };
-            return acc;
-        }, {});
-        
-
-        const completedAttempts = await prisma.examAttempt.findMany({
-            where: { paperId: parseInt(paperId), isCompleted: true },
-            include: { student: true, paper: true, result: true }
-        });
-
-        if (completedAttempts.length === 0) {
+        if (!paper || paper.examAttempts.length === 0) {
             return res.status(404).json({ message: 'No completed attempts found for this paper.' });
         }
 
         let emailsSent = 0;
-        let resultsCreated = 0;
-        const allScores = [];
+        // Process sequentially or in small chunks to avoid SMTP server blocking
+        for (const attempt of paper.examAttempts) {
+            try {
+                const emailContent = createResultMail(
+                    attempt.student.fullName,
+                    attempt.score,
+                    paper.totalMarks,
+                    attempt.result?.analysisJson || {}
+                );
 
-        for (const attempt of completedAttempts) {
-            const studentAnswers = attempt.answers || {}; 
-            let totalScore = 0;
-            let analysis = { PHYSICS: { score: 0, total: 40, weakAreas: [] }, CHEMISTRY: { score: 0, total: 40, weakAreas: [] }, MATHS: { score: 0, total: 80, weakAreas: [] } }; // Initialize analysis
-
-            // 2. Score the attempt
-            for (const qId in studentAnswers) {
-                const questionData = correctAnswersMap[parseInt(qId)];
-                if (!questionData) continue; 
-                const studentSelectionIndex = studentAnswers[qId];
-                const subject = questionData.subject;
-                const correctIndex = questionData.correctIndex;
-                
-                if (studentSelectionIndex === correctIndex) {
-                    totalScore += 1; // Assuming 1 mark per correct answer
-                    // Update subject score (assuming subject keys match analysis keys)
-                    if (analysis[subject]) {
-                        analysis[subject].score += 1;
-                    }
-                }
-                // NOTE: Negative marking, attempt count, and accuracy calculation would go here.
+                sendMail(attempt.student.email, `Results for ${paper.title}`, emailContent);
+                emailsSent++;
+            } catch (err) {
+                console.error(`Email failed for ${attempt.student.email}:`, err.message);
             }
-            
-            // 3. Update ExamAttempt and Create/Update Result
-            const updatedAttempt = await prisma.examAttempt.update({
-                where: { id: attempt.id },
-                data: { score: totalScore }
-            });
-
-            // Re-use or create the Result record
-            if (attempt.result) {
-                await prisma.result.update({
-                    where: { id: attempt.result.id },
-                    data: { totalScore: totalScore, analysisJson: analysis },
-                });
-            } else {
-                await prisma.result.create({
-                    data: {
-                        attemptId: attempt.id,
-                        totalScore: totalScore,
-                        analysisJson: analysis,
-                    }
-                });
-                resultsCreated++;
-            }
-            
-            allScores.push({ fullName: attempt.student.fullName, score: totalScore });
-
-            // 4. Send email (existing logic)
-            // const emailContent = createResultMail(attempt.student.fullName, totalScore, paperDetails.totalMarks, analysis);
-            // await sendMail(attempt.student.email, `Your Mock Exam Results: ${paperDetails.title}`, emailContent);
-            emailsSent++;
         }
-        
-        // ... (top 5 sorting logic - UNCHANGED)
-        const sortedScores = allScores.sort((a, b) => b.score - a.score).slice(0, 5);
-        const top5 = sortedScores.map((s, index) => `${index + 1}. ${s.fullName} (${s.score} marks)`);
-
 
         res.status(200).json({
-            message: `Successfully processed results and sent emails to ${emailsSent} students.`,
-            top5Students: top5,
-            resultsCreated: resultsCreated,
+            message: `Successfully sent emails to ${emailsSent} students.`
         });
-
     } catch (error) {
-        console.error('Send Results Mail/Scoring Error:', error);
-        res.status(500).json({ message: 'Internal server error during paper scoring.' });
+        console.error('Send Mail Error:', error);
+        res.status(500).json({ message: 'Internal error while sending results.' });
     }
 };
 // --- Teacher Function: Upload Questions (CSV Implementation) ---
@@ -886,134 +811,101 @@ const getExamStats = async (req, res) => {
 // --- Get Comprehensive Reports ---
 const getReports = async (req, res) => {
     try {
-        // Fetch all question papers with related data
+        // 1. Fetch total student count ONCE, not inside a loop
+        const registeredForExam = await prisma.student.count();
+
+        // 2. Fetch papers with necessary relations
         const papers = await prisma.questionPaper.findMany({
             include: {
                 examAttempts: {
+                    where: { isCompleted: true },
                     include: {
-                        student: true,
                         result: true,
                     }
                 },
+                _count: {
+                    select: { 
+                        examAttempts: true, // This gives total "attempted" count
+                        paperQuestions: true 
+                    }
+                },
                 paperQuestions: {
-                    include: {
-                        question: true
+                    select: {
+                        question: {
+                            select: { subject: true }
+                        }
                     }
                 }
             },
-            orderBy: {
-                createdAt: 'desc'
-            }
+            orderBy: { createdAt: 'desc' }
         });
 
-        // Process each paper to calculate comprehensive statistics
-        const reports = await Promise.all(papers.map(async (paper) => {
-            const attempts = paper.examAttempts;
-            const completedAttempts = attempts.filter(a => a.isCompleted);
-            
-            // Calculate total students who started the exam (count UNIQUE students only)
-            const totalStudents = await prisma.student.count();
-            const registeredForExam = totalStudents; // In future, can be filtered by specific registration
-            
-            // Count unique students who attempted (not total attempt records)
-            const uniqueStudentIds = new Set(attempts.map(a => a.studentId));
-            const attemptedCount = uniqueStudentIds.size;
-            
-            // Count unique students who completed
-            const uniqueCompletedStudentIds = new Set(completedAttempts.map(a => a.studentId));
-            const completedCount = uniqueCompletedStudentIds.size;
+        // 3. Process in-memory (much faster than DB calls in a loop)
+        const reports = papers.map((paper) => {
+            const completedAttempts = paper.examAttempts;
+            const completedCount = completedAttempts.length;
+            const attemptedCount = paper._count.examAttempts;
             
             // Calculate average score
-            const totalScore = completedAttempts.reduce((sum, attempt) => sum + attempt.score, 0);
-            const avgScore = completedCount > 0 ? (totalScore / completedCount).toFixed(1) : 0;
+            const totalScore = completedAttempts.reduce((sum, a) => sum + (a.score || 0), 0);
+            const avgScore = completedCount > 0 ? (totalScore / completedCount).toFixed(1) : "0";
             
-            // Calculate subject-wise statistics
+            // Subject Analytics
             const subjectStats = {
-                PHYSICS: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 },
-                CHEMISTRY: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 },
-                MATHEMATICS: { totalQuestions: 0, totalScore: 0, count: 0, maxMarks: 0 }
+                PHYSICS: { score: 0, count: 0, totalQuestions: 0 },
+                CHEMISTRY: { score: 0, count: 0, totalQuestions: 0 },
+                MATHEMATICS: { score: 0, count: 0, totalQuestions: 0 }
             };
-            
-            // Count questions per subject (each question is 1 mark)
+
+            // Count questions per subject from the paper
             paper.paperQuestions.forEach(pq => {
-                const subject = pq.question.subject;
-                if (subjectStats[subject]) {
-                    subjectStats[subject].totalQuestions++;
-                    subjectStats[subject].maxMarks++; // Each question = 1 mark
-                }
+                const sub = pq.question.subject;
+                if (subjectStats[sub]) subjectStats[sub].totalQuestions++;
             });
-            
-            // Calculate subject-wise scores from completed attempts
+
+            // Aggregate subject scores from results
             completedAttempts.forEach(attempt => {
-                if (attempt.result && attempt.result.analysisJson) {
+                if (attempt.result?.analysisJson) {
                     const analysis = attempt.result.analysisJson;
-                    
-                    ['PHYSICS', 'CHEMISTRY', 'MATHEMATICS'].forEach(subject => {
-                        // Check both uppercase and lowercase keys for compatibility
-                        const subjectData = analysis[subject] || analysis[subject.toLowerCase()];
-                        if (subjectData && typeof subjectData.score !== 'undefined') {
-                            subjectStats[subject].totalScore += subjectData.score || 0;
-                            subjectStats[subject].count++;
+                    Object.keys(subjectStats).forEach(sub => {
+                        const data = analysis[sub] || analysis[sub.toLowerCase()];
+                        if (data) {
+                            subjectStats[sub].score += (data.score || 0);
+                            subjectStats[sub].count++;
                         }
                     });
                 }
             });
-            
-            // Calculate averages for each subject (only include subjects that exist in the paper)
+
             const subjectAnalytics = Object.entries(subjectStats)
-                .filter(([subject, stats]) => stats.totalQuestions > 0)
+                .filter(([_, stats]) => stats.totalQuestions > 0)
                 .map(([subject, stats]) => ({
                     subject,
-                    avgScore: stats.count > 0 ? (stats.totalScore / stats.count).toFixed(1) : '0',
-                    maxMarks: stats.maxMarks,
+                    avgScore: stats.count > 0 ? (stats.score / stats.count).toFixed(1) : "0",
+                    maxMarks: stats.totalQuestions,
                     totalQuestions: stats.totalQuestions
                 }));
-            
-            // Calculate feedback score (weighted: 30% completion rate + 70% performance)
-            const completionRate = attemptedCount > 0 ? (completedCount / attemptedCount) * 100 : 0;
-            const scorePercentage = paper.totalMarks > 0 && completedCount > 0 
-                ? (parseFloat(avgScore) / paper.totalMarks) * 100 
-                : 0;
-            const feedbackScore = ((completionRate * 0.3) + (scorePercentage * 0.7)) / 10;
-            
-            // Calculate attempt percentage (students who started vs total registered)
-            const attemptPercentage = registeredForExam > 0 
-                ? ((attemptedCount / registeredForExam) * 100).toFixed(0) 
-                : '0';
-            
+
             return {
                 id: paper.id,
                 title: paper.title,
                 startDate: paper.startTime,
                 totalMarks: paper.totalMarks,
-                durationHours: paper.durationHours,
-                isActive: paper.isActive,
-                feedback: completedCount > 0 ? feedbackScore.toFixed(1) : '0.0',
-                totalStudents: attemptedCount, // Students who started the exam
-                avgScore: completedCount > 0 ? avgScore : '0',
                 status: paper.isActive ? 'Active' : 'Complete',
-                registered: registeredForExam, // Total students in system
-                attempted: attemptedCount, // Students who started
-                completed: completedCount, // Students who finished
-                attemptPercentage: attemptPercentage,
-                subjectAnalytics: subjectAnalytics,
-                createdAt: paper.createdAt,
-                totalQuestions: paper.paperQuestions.length
+                feedback: (completedCount > 0 ? (parseFloat(avgScore) / paper.totalMarks) * 10 : 0).toFixed(1),
+                registered: registeredForExam,
+                attempted: attemptedCount,
+                completed: completedCount,
+                attemptPercentage: registeredForExam > 0 ? ((attemptedCount / registeredForExam) * 100).toFixed(0) : "0",
+                avgScore: avgScore,
+                subjectAnalytics
             };
-        }));
-
-        res.status(200).json({
-            success: true,
-            reports: reports
         });
 
+        res.status(200).json({ success: true, reports });
     } catch (error) {
         console.error('Get Reports Error:', error);
-        res.status(500).json({ 
-            success: false,
-            message: 'Failed to fetch reports.',
-            error: error.message 
-        });
+        res.status(500).json({ success: false, message: 'Failed to fetch reports due to server timeout.' });
     }
 };
 
