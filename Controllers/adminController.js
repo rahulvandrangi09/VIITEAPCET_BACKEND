@@ -326,6 +326,7 @@ const answerMap = {
 // --- CORE ADMIN FUNCTION: Send Mass Results Mails (Updated Scoring Logic) ---
 const sendResultsMails = async (req, res) => {
     const { paperId } = req.body;
+    
     if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
 
     try {
@@ -334,7 +335,10 @@ const sendResultsMails = async (req, res) => {
             include: {
                 examAttempts: {
                     where: { isCompleted: true },
-                    include: { student: true, result: true }
+                    include: { 
+                        student: true, 
+                        result: true // This contains the subject-wise analysisJson
+                    }
                 }
             }
         });
@@ -344,29 +348,34 @@ const sendResultsMails = async (req, res) => {
         }
 
         let emailsSent = 0;
-        // Process sequentially or in small chunks to avoid SMTP server blocking
+
         for (const attempt of paper.examAttempts) {
             try {
+                // FALLBACK: Use attempt.score if result record is missing
+                const finalScore = attempt.score !== null ? attempt.score : 0;
+                const analysis = attempt.result?.analysisJson || {};
+
                 const emailContent = createResultMail(
                     attempt.student.fullName,
-                    attempt.score,
+                    finalScore,
                     paper.totalMarks,
-                    attempt.result?.analysisJson || {}
+                    analysis
                 );
 
-                sendMail(attempt.student.email, `Results for ${paper.title}`, emailContent);
+                await sendMail(attempt.student.email, `Results for ${paper.title}`, emailContent);
                 emailsSent++;
             } catch (err) {
-                console.error(`Email failed for ${attempt.student.email}:`, err.message);
+                console.error(`Error processing email for student ID ${attempt.studentId}:`, err.message);
             }
         }
 
-        res.status(200).json({
-            message: `Successfully sent emails to ${emailsSent} students.`
+        res.status(200).json({ 
+            message: `Successfully sent results to ${emailsSent} students.` 
         });
+
     } catch (error) {
-        console.error('Send Mail Error:', error);
-        res.status(500).json({ message: 'Internal error while sending results.' });
+        console.error('sendResultsMails Error:', error);
+        res.status(500).json({ message: 'Failed to send emails.' });
     }
 };
 // --- Teacher Function: Upload Questions (CSV Implementation) ---

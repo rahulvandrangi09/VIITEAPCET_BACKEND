@@ -82,44 +82,47 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
     let weaknessHtml = '';
     const weakSubjects = [];
 
-    // Simple analysis logic: Flag subject if score is less than 50% of total subject marks
-    for (const subject in analysis) {
-        const data = analysis[subject];
-        if (data.score < (data.total / 2)) {
+    // 1. Create a "Safe" analysis object with defaults
+    // This prevents "Cannot read property 'score' of undefined"
+    const safeAnalysis = {
+        PHYSICS: analysis?.PHYSICS || { score: 0, total: 0 },
+        CHEMISTRY: analysis?.CHEMISTRY || { score: 0, total: 0 },
+        MATHEMATICS: analysis?.MATHEMATICS || analysis?.MATHS || { score: 0, total: 0 }
+    };
+
+    // 2. Logic to build the improvement suggestions
+    for (const subject in safeAnalysis) {
+        const data = safeAnalysis[subject];
+        // Only suggest improvement if they actually had questions (total > 0)
+        if (data.total > 0 && data.score < (data.total / 2)) {
             weakSubjects.push(subject);
-            weaknessHtml += `<li><strong>${subject}:</strong> Your score of ${data.score}/${data.total} suggests a need for improvement. Focus on the fundamental concepts.</li>`;
+            weaknessHtml += `<li><strong>${subject}:</strong> Score: ${data.score}/${data.total}</li>`;
         }
     }
 
-    if (weakSubjects.length > 0) {
-        weaknessHtml = `
-            <div style="padding: 15px; border: 1px solid #ffcc00; background-color: #fffacd; margin-top: 20px;">
-                <h2>Personalized Suggestion</h2>
-                <p>Based on your performance, here are some subjects we recommend you focus on:</p>
-                <ul style="padding-left: 20px;">${weaknessHtml}</ul>
-                <p>A balanced preparation is key to success!</p>
-            </div>
-        `;
-    } else {
-        weaknessHtml = '<div style="padding: 15px; border: 1px solid #4CAF50; background-color: #e6ffe6; margin-top: 20px;"><h2>Congratulations!</h2><p>Your performance across all subjects was strong and balanced! Keep up the great work.</p></div>';
-    }
+    const feedbackBox = weakSubjects.length > 0 
+        ? `<div style="padding: 15px; border: 1px solid #ffcc00; background-color: #fffacd; margin-top: 20px;">
+            <h3>Focus Areas</h3>
+            <ul>${weaknessHtml}</ul>
+           </div>`
+        : `<div style="padding: 15px; border: 1px solid #4CAF50; background-color: #e6ffe6; margin-top: 20px;">
+            <h3>Great Job!</h3><p>You performed well across all sections.</p>
+           </div>`;
 
     return `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
-            <h1 style="color: #003973;">Mock Exam Results for ${fullName}</h1>
-            <p>We are pleased to announce your results for the latest mock test.</p>
-            <p><strong>Overall Score:</strong> <span style="font-size: 1.2em; color: #003973; font-weight: bold;">${totalScore} out of ${totalMarks}</span></p>
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
+            <h2 style="color: #003973;">Exam Results: ${fullName}</h2>
+            <p><strong>Total Score:</strong> ${totalScore || 0} / ${totalMarks || 0}</p>
             
-            <h2 style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Subject Breakdown:</h2>
-            <ul style="list-style-type: none; padding: 0;">
-                <li style="margin-bottom: 5px;">Physics: <strong>${analysis.PHYSICS.score}/${analysis.PHYSICS.total}</strong></li>
-                <li style="margin-bottom: 5px;">Chemistry: <strong>${analysis.CHEMISTRY.score}/${analysis.CHEMISTRY.total}</strong></li>
-                <li style="margin-bottom: 5px;">Maths: <strong>${analysis.MATHEMATICS.score}/${analysis.MATHEMATICS.total}</strong></li>
-            </ul>
+            <hr />
+            <h3>Subject Breakdown:</h3>
+            <p>Physics: ${safeAnalysis.PHYSICS.score}/${safeAnalysis.PHYSICS.total}</p>
+            <p>Chemistry: ${safeAnalysis.CHEMISTRY.score}/${safeAnalysis.CHEMISTRY.total}</p>
+            <p>Mathematics: ${safeAnalysis.MATHEMATICS.score}/${safeAnalysis.MATHEMATICS.total}</p>
 
-            ${weaknessHtml}
+            ${feedbackBox}
             
-            <p style="margin-top: 20px;">All the best for your continued preparation!</p>
+            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIIT Mock Portal</p>
         </div>
     `;
 };
