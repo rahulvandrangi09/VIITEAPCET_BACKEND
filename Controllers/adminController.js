@@ -29,6 +29,17 @@ const getFilePath = (imageKey, uploadedFiles) => {
     return file ? path.join('/uploads', file.filename) : null; 
 };
 
+// Small helper to decode basic HTML entities back to characters/tags
+const decodeHtmlEntities = (str) => {
+    if (!str || typeof str !== 'string') return '';
+    return str
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+};
+
 const generateCustomQuestionPaper = async (req, res) => {
     // 🚨 ADD startTime to destructuring
     const { adminId, title, distribution, durationHours, startTime } = req.body; 
@@ -130,15 +141,59 @@ const previewQuestionPaper = async (req, res) => {
             return res.status(404).json({ message: 'Question paper not found.' });
         }
 
+        const baseUrl = req.protocol + '://' + req.get('host');
+
         const questions = paper.paperQuestions
-            .map(pq => ({
-                id: pq.question.id,
-                text: pq.question.text,
-                options: pq.question.options, 
-                correctAnswer: pq.question.correctAnswer,
-                subject: pq.question.subject,
-                difficulty: pq.question.difficulty,
-            }))
+            .map(pq => {
+                const q = pq.question;
+                // Option image fields are stored as optionAImageUrl, optionBImageUrl, ...
+                const optionImageFields = ['optionAImageUrl','optionBImageUrl','optionCImageUrl','optionDImageUrl'];
+
+                // Build options with possible images
+                const options = (q.options || []).map((opt, idx) => {
+                    const imgField = optionImageFields[idx];
+                    const imgPath = q[imgField] ? (baseUrl + q[imgField]) : null;
+                    return {
+                        text: opt,
+                        image: imgPath
+                    };
+                });
+
+                // Question-level image (if present)
+                const questionImage = q.questionImageUrl ? (baseUrl + q.questionImageUrl) : null;
+
+                // Compose an HTML snippet that clients can render with innerHTML/dangerouslySetInnerHTML
+                // This includes decoded question text and any images for question/options.
+                const decodedText = decodeHtmlEntities(q.text || '');
+                let html = decodedText;
+                if (questionImage) {
+                    html += `<div><img src="${questionImage}" alt="question image" style="max-width:100%;height:auto;"/></div>`;
+                }
+
+                // Append options HTML
+                html += '<ol type="A">';
+                options.forEach((op, i) => {
+                    const label = String.fromCharCode(65 + i); // A, B, C, D
+                    if (op.image) {
+                        html += `<li><div>${op.text ? decodeHtmlEntities(op.text) : ''}</div><div><img src="${op.image}" alt="option ${label}" style="max-width:100%;height:auto;"/></div></li>`;
+                    } else {
+                        html += `<li>${decodeHtmlEntities(op.text || '')}</li>`;
+                    }
+                });
+                html += '</ol>';
+
+                return {
+                    id: q.id,
+                    text: q.text,
+                    html, // HTML-safe string for client rendering
+                    options: options.map(o => o.text),
+                    optionImages: options.map(o => o.image),
+                    correctAnswer: q.correctAnswer,
+                    subject: q.subject,
+                    difficulty: q.difficulty,
+                    questionImage
+                };
+            })
             .sort((a, b) => a.id - b.id); 
 
         res.status(200).json({
