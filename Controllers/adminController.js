@@ -9,14 +9,6 @@ const { hashPassword, comparePassword } = require('./authController');
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;
 
 
-// --- Helper for Random Selection ---
-const shuffleArray = (array) => {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
-};
 
 // ⚠️ IMPORTANT: Set a default ID for the uploader for the foreign key constraint.
 // You must ensure a User with this ID exists (Teacher or Admin role).
@@ -40,87 +32,123 @@ const decodeHtmlEntities = (str) => {
         .replace(/&#39;/g, "'");
 };
 
-const generateCustomQuestionPaper = async (req, res) => {
-    // 🚨 ADD startTime to destructuring
-    const { adminId, title, distribution, durationHours, startTime } = req.body; 
-    console.log(req.body);
-    // 🚨 Update validation to include startTime
-    if (!adminId || !title || !distribution || !startTime) {
-        return res.status(400).json({ message: 'Admin ID, title, distribution, and start time are required.' });
-    }
 
-    let allSelectedQuestions = [];
-    let totalQuestionsCount = 0;
+const generateCustomQuestionPaper = async (req, res) => {
+    const { adminId, title, distribution, durationHours, startTime } = req.body;
 
     try {
-        const subjectKeys = Object.keys(distribution).filter(k => Subject[k]);
-        console.log(Subject["CHEMISTRY"]);
-        console.log(Subject["PHYSICS"]);
-        console.log(Subject["MATHEMATICS"]);
-        console.log(Object.keys(distribution));
-        for (const subjectKey of subjectKeys) {
-            // ... (Existing question selection logic remains the same) ...
-            const subject = Subject[subjectKey];
-            const subjectDistribution = distribution[subjectKey];
-            let selectedSubjectQuestions = [];
-            
-            for (const difficultyKey in subjectDistribution) {
-                const difficulty = Difficulty[difficultyKey];
-                const targetCount = parseInt(subjectDistribution[difficultyKey]);
-                
-                if (targetCount <= 0 || !difficulty) continue;
+        // 1. Fetch all available questions
+        const allQuestions = await prisma.question.findMany({
+            select: { id: true, subject: true, difficulty: true, topic: true }
+        });
 
-                const availableQuestions = await prisma.question.findMany({
-                    where: { subject: subject, difficulty: difficulty },
-                    select: { id: true }
-                });
-
-                const questionsToTake = Math.min(targetCount, availableQuestions.length);
-                const randomSelection = shuffleArray(availableQuestions).slice(0, questionsToTake);
-                
-                selectedSubjectQuestions = selectedSubjectQuestions.concat(randomSelection);
-                totalQuestionsCount += randomSelection.length;
+        // 2. Map questions: [Subject][Difficulty][Topic] -> [Array of IDs]
+        const availabilityMap = {};
+        allQuestions.forEach(q => {
+            if (!availabilityMap[q.subject]) availabilityMap[q.subject] = {};
+            if (!availabilityMap[q.subject][q.difficulty]) availabilityMap[q.subject][q.difficulty] = {};
+            if (!availabilityMap[q.subject][q.difficulty][q.topic]) {
+                availabilityMap[q.subject][q.difficulty][q.topic] = [];
             }
+            availabilityMap[q.subject][q.difficulty][q.topic].push(q.id);
+        });
 
-            shuffleArray(selectedSubjectQuestions);
-            allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
-        }
+        let allSelectedQuestions = [];
+        let totalQuestionsCount = 0;
+        const subjectBreakdown = {};
 
-        if (allSelectedQuestions.length === 0) {
-             return res.status(404).json({ message: 'Could not find any questions based on the selected distribution.' });
+        // 3. Iterate through the distribution (MATHEMATICS, PHYSICS, etc.)
+        for (const subjectKey in distribution) {
+            const difficulties = distribution[subjectKey]; 
+            subjectBreakdown[subjectKey] = { total: 0, topics: {} };
+
+            for (const diffKey in difficulties) {
+                const targetCount = parseInt(difficulties[diffKey]);
+                if (targetCount <= 0) continue;
+
+                // Find all topics existing for this Subject + Difficulty
+                const topicsMap = availabilityMap[subjectKey]?.[diffKey] || {};
+                const topicNames = Object.keys(topicsMap);
+
+                if (topicNames.length === 0) {
+                    return res.status(400).json({ 
+                        message: `No questions found for ${subjectKey} with difficulty ${diffKey}.` 
+                    });
+                }
+
+                // --- BALANCING LOGIC ---
+                const numTopics = topicNames.length;
+                const basePerTopic = Math.floor(targetCount / numTopics);
+                let remainder = targetCount % numTopics;
+
+                // Shuffle topics so the "extra" questions from the remainder aren't always given to the same topics
+                const shuffledTopicNames = shuffleArray([...topicNames]);
+
+                for (const topicName of shuffledTopicNames) {
+                    let countToTake = basePerTopic + (remainder > 0 ? 1 : 0);
+                    if (remainder > 0) remainder--;
+
+                    const availableIds = topicsMap[topicName];
+
+                    if (availableIds.length < countToTake) {
+                        return res.status(400).json({
+                            message: `Insufficient questions in "${topicName}" (${subjectKey} ${diffKey}). Needed: ${countToTake}, Available: ${availableIds.length}.`
+                        });
+                    }
+
+                    // Pick random questions from this topic
+                    const selected = shuffleArray([...availableIds]).slice(0, countToTake);
+                    
+                    selected.forEach(id => {
+                        allSelectedQuestions.push({ id });
+                        totalQuestionsCount++;
+                        
+                        // Update breakdown for the response
+                        if (!subjectBreakdown[subjectKey].topics[topicName]) {
+                            subjectBreakdown[subjectKey].topics[topicName] = 0;
+                        }
+                        subjectBreakdown[subjectKey].topics[topicName]++;
+                    });
+                }
+            }
         }
-        
-        shuffleArray(allSelectedQuestions);
+        console.log('Total selected questions:', totalQuestionsCount);
+        // 4. Save to Database
+        shuffleArray(allSelectedQuestions); // Final randomize for the actual paper order
 
         const newPaper = await prisma.questionPaper.create({
             data: {
-                title: title,
+                title,
                 createdById: parseInt(adminId),
                 durationHours: parseInt(durationHours) || 3,
                 startTime: new Date(startTime),
                 totalMarks: totalQuestionsCount,
                 paperQuestions: {
-                    create: allSelectedQuestions.map(q => ({
-                        questionId: q.id
-                    }))
+                    create: allSelectedQuestions.map(q => ({ questionId: q.id }))
                 }
-            },
-            include: {
-                paperQuestions: true 
             }
         });
 
         res.status(201).json({
-            message: 'Question Paper created successfully.',
+            message: 'Balanced Question Paper created successfully.',
             paperId: newPaper.id,
-            totalQuestions: newPaper.paperQuestions.length,
+            totalQuestions: totalQuestionsCount,
+            breakdown: subjectBreakdown
         });
 
     } catch (error) {
-        console.error('Custom Paper Generation Error:', error);
-        res.status(500).json({ message: 'Internal server error during custom paper generation.' });
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error.' });
     }
-};
+}; 
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
 
 const previewQuestionPaper = async (req, res) => {
     const { paperId } = req.params;
@@ -214,12 +242,12 @@ const saveQuestionsToDb = async (req, res) => {
         }
         return res.status(400).json({ message: "No questions payload found in request body. Upload failed." });
     }
+
     let uploadedFiles = req.files || [];
     let questionsToSave = [];
 
     try {
         const questionsPayload = JSON.parse(req.body.questions);
-        
         for (const q of questionsPayload) {
             const subject = q.subject; 
             const difficulty = q.difficulty;
@@ -229,6 +257,7 @@ const saveQuestionsToDb = async (req, res) => {
                 options: optionsArray, 
                 correctAnswer: q.answer, // e.g., "Option A"
                 uploadedById: DEFAULT_UPLOADER_ID, 
+                topic: q.topic,
                 subject: subject,
                 difficulty: difficulty,
                 questionImageUrl: getFilePath(q.questionImageKey, uploadedFiles),
