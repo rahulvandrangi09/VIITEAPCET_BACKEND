@@ -79,6 +79,7 @@ app.post('/api/admin/create-paper', protect, authorize('ADMIN','TEACHER'), admin
 app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
 app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN', 'TEACHER'), adminController.generateCustomQuestionPaper);
 app.get('/api/admin/preview-paper/:paperId', protect, authorize('ADMIN', 'TEACHER'), adminController.previewQuestionPaper);
+app.get('/api/admin/top-students/:paperId', protect, authorize('ADMIN'), adminController.getTopStudents);
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
 app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);

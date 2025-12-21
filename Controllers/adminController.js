@@ -1,6 +1,6 @@
 // controllers/adminController.js
 const prisma = require('../utils/prisma');
-const { sendMail, createResultMail, createRegistrationMail } = require('../utils/mail');
+const { sendMail, createResultMail, createRegistrationMail, createResultMailWithVoucher } = require('../utils/mail');
 const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
@@ -378,9 +378,56 @@ const answerMap = {
     'Option D': 3,
 };
 
-// --- CORE ADMIN FUNCTION: Send Mass Results Mails (Updated Scoring Logic) ---
+// --- NEW FUNCTION: Get Top 10 Students for a Paper ---
+const getTopStudents = async (req, res) => {
+    const { paperId } = req.params;
+    
+    if (!paperId) {
+        return res.status(400).json({ message: 'Paper ID is required.' });
+    }
+
+    try {
+        const topStudents = await prisma.examAttempt.findMany({
+            where: {
+                paperId: parseInt(paperId),
+                isCompleted: true
+            },
+            orderBy: {
+                score: 'desc'
+            },
+            take: 10,
+            include: {
+                student: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true
+                    }
+                }
+            }
+        });
+
+        const formattedStudents = topStudents.map(attempt => ({
+            studentId: attempt.student.id,
+            name: attempt.student.fullName,
+            email: attempt.student.email,
+            score: attempt.score,
+            rank: topStudents.indexOf(attempt) + 1
+        }));
+
+        res.status(200).json({
+            topStudents: formattedStudents
+        });
+
+    } catch (error) {
+        console.error('Get Top Students Error:', error);
+        res.status(500).json({ message: 'Failed to fetch top students.' });
+    }
+};
+
+// --- CORE ADMIN FUNCTION: Send Mass Results Mails with Optional Vouchers ---
 const sendResultsMails = async (req, res) => {
-    const { paperId } = req.body;
+    const { paperId, vouchers } = req.body;
     
     if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
 
@@ -393,6 +440,9 @@ const sendResultsMails = async (req, res) => {
                     include: { 
                         student: true, 
                         result: true // This contains the subject-wise analysisJson
+                    },
+                    orderBy: {
+                        score: 'desc'
                     }
                 }
             }
@@ -402,20 +452,48 @@ const sendResultsMails = async (req, res) => {
             return res.status(404).json({ message: 'No completed attempts found for this paper.' });
         }
 
-        let emailsSent = 0;
+        // Create a map of top students to their voucher codes (rank 1-10)
+        const voucherMap = {};
+        if (vouchers && Array.isArray(vouchers)) {
+            vouchers.forEach((voucher, index) => {
+                if (index < paper.examAttempts.length) {
+                    voucherMap[paper.examAttempts[index].student.id] = voucher.code;
+                }
+            });
+        }
 
-        for (const attempt of paper.examAttempts) {
+        let emailsSent = 0;
+        let vouchersSent = 0;
+
+        for (let i = 0; i < paper.examAttempts.length; i++) {
+            const attempt = paper.examAttempts[i];
             try {
                 // FALLBACK: Use attempt.score if result record is missing
                 const finalScore = attempt.score !== null ? attempt.score : 0;
                 const analysis = attempt.result?.analysisJson || {};
+                const voucherCode = voucherMap[attempt.student.id] || null;
 
-                const emailContent = createResultMail(
-                    attempt.student.fullName,
-                    finalScore,
-                    paper.totalMarks,
-                    analysis
-                );
+                let emailContent;
+                if (voucherCode) {
+                    // Top 10 student - send voucher email
+                    emailContent = createResultMailWithVoucher(
+                        attempt.student.fullName,
+                        finalScore,
+                        paper.totalMarks,
+                        analysis,
+                        voucherCode,
+                        i + 1 // Rank
+                    );
+                    vouchersSent++;
+                } else {
+                    // Regular student - send normal result email
+                    emailContent = createResultMail(
+                        attempt.student.fullName,
+                        finalScore,
+                        paper.totalMarks,
+                        analysis
+                    );
+                }
 
                 await sendMail(attempt.student.email, `Results for ${paper.title}`, emailContent);
                 emailsSent++;
@@ -425,7 +503,7 @@ const sendResultsMails = async (req, res) => {
         }
 
         res.status(200).json({ 
-            message: `Successfully sent results to ${emailsSent} students.` 
+            message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.` 
         });
 
     } catch (error) {
@@ -978,11 +1056,12 @@ module.exports = {
     sendResultsMails,
     uploadQuestions,
     saveQuestionsToDb,
-    generateCustomQuestionPaper, // 🚨 NEW EXPORT
-    previewQuestionPaper, // 🚨 NEW EXPORT
+    generateCustomQuestionPaper,
+    previewQuestionPaper,
     registerTeacher,
     changeAdminPassword,
-    getAdminStats, // 🚨 NEW EXPORT
-    getExamStats, // 🚨 NEW EXPORT
-    getReports, // 🚨 NEW EXPORT FOR REPORTS
+    getAdminStats,
+    getExamStats,
+    getReports,
+    getTopStudents, // 🚨 NEW EXPORT
 };
