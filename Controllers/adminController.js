@@ -302,6 +302,14 @@ const saveQuestionsToDb = async (req, res) => {
     }
 };
 
+const totalQuestions = async(req,res) => {
+    try {
+        const data = await prisma.Question.findMany();
+        console.log(data);
+    } catch(error) {
+        console.error(error);
+    }
+}
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
@@ -1080,6 +1088,40 @@ const getReports = async (req, res) => {
     }
 };
 
+const getQuestionCounts = async (req, res) => {
+    try {
+        // Count per subject
+        const bySubject = await prisma.question.groupBy({
+            by: ['subject'],
+            _count: { _all: true }
+        });
+
+        // Count per subject+topic
+        const bySubjectTopic = await prisma.question.groupBy({
+            by: ['subject', 'topic'],
+            _count: { _all: true }
+        });
+
+        const subjectCounts = {};
+        bySubject.forEach(r => {
+            subjectCounts[r.subject] = r._count._all;
+        });
+
+        const topicCounts = {};
+        bySubjectTopic.forEach(r => {
+            const subj = r.subject || 'UNSPECIFIED';
+            const topic = r.topic || 'UNSPECIFIED';
+            if (!topicCounts[subj]) topicCounts[subj] = {};
+            topicCounts[subj][topic] = r._count._all;
+        });
+        res.status(200).json({topicCounts });
+    } catch (error) {
+        console.error('getQuestionCounts Error:', error);
+        res.status(500).json({ message: 'Internal server error while fetching question counts.' });
+    }
+};
+
+
 module.exports = {
     generateQuestionPaper,
     sendResultsMails,
@@ -1090,7 +1132,11 @@ module.exports = {
     registerTeacher,
     changeAdminPassword,
     getAdminStats,
+    getQuestionCounts,
     getExamStats,
     getReports,
-    getTopStudents, // 🚨 NEW EXPORT
+    getTopStudents,
+    totalQuestions
 };
+
+// --- NEW ADMIN FUNCTION: Get question counts grouped by subject and topic ---

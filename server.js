@@ -83,7 +83,7 @@ app.get('/api/admin/top-students/:paperId', protect, authorize('ADMIN'), adminCo
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
 app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);
-
+app.get('/api/admin/total-questions', protect, authorize('ADMIN','TEACHER'), adminController.getQuestionCounts);
 // --- TEACHER ROUTES ---
 // Applied upload.single('csvFile') middleware to handle the file upload
 app.post('/api/teacher/save-questions', protect, authorize('ADMIN', 'TEACHER'), upload.any(), adminController.saveQuestionsToDb);

@@ -43,6 +43,8 @@ const generateToken = (userId, role) => {
  * Handles the registration of a new student (assuming student-specific logic like photo upload).
  */
 const registerStudent = async (req, res) => {
+    console.log(req.body);
+    console.log(req?.file);
     const {
     fullName,
     fatherName,
