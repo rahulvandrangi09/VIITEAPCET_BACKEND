@@ -75,9 +75,9 @@ app.post('/api/auth/login', authController.login);
 app.post('/api/auth/change-password', adminController.changeAdminPassword);
 app.post('/api/admin/register-teacher', protect, authorize('ADMIN'), adminController.registerTeacher);
 // --- ADMIN ROUTES ---
-app.post('/api/admin/create-paper', protect, authorize('ADMIN','TEACHER'), adminController.generateQuestionPaper);
+app.post('/api/admin/create-paper', protect, authorize('ADMIN'), adminController.generateQuestionPaper);
 app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
-app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN', 'TEACHER'), adminController.generateCustomQuestionPaper);
+app.post('/api/admin/create-paper-custom', protect, authorize('ADMIN'), adminController.generateCustomQuestionPaper);
 app.get('/api/admin/preview-paper/:paperId', protect, authorize('ADMIN', 'TEACHER'), adminController.previewQuestionPaper);
 app.get('/api/admin/top-students/:paperId', protect, authorize('ADMIN'), adminController.getTopStudents);
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);

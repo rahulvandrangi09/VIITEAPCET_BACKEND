@@ -313,99 +313,101 @@ const totalQuestions = async(req,res) => {
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
-    const { adminId, title, startTime } = req.body;
-    
-    // 🚨 Update validation to include startTime
-    if (!adminId || !title || !startTime) {
-        return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
-    }
-    const DEFAULT_DISTRIBUTION = {
-        EASY: 0.30, 
-        MEDIUM: 0.40, 
-        HARD: 0.30
-    };
+    console.log(req);
+    res.status(201).json({message: 'Question Paper created successfully.'});
+    // const { adminId, title, startTime } = req.body;    
+    // // 🚨 Update validation to include startTime
+    // if (!adminId || !title || !startTime) {
+    //     return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
+    // }
 
-    const TARGET_QUESTIONS = {
-        PHYSICS: 40,
-        CHEMISTRY: 40,
-        MATHS: 80
-    };
+    // const DEFAULT_DISTRIBUTION = {
+    //     EASY: 0.30, 
+    //     MEDIUM: 0.40, 
+    //     HARD: 0.30
+    // };
 
-    let allSelectedQuestions = [];
+    // const TARGET_QUESTIONS = {
+    //     PHYSICS: 40,
+    //     CHEMISTRY: 40,
+    //     MATHS: 80
+    // };
 
-    try {
-        for (const subjectKey of Object.keys(TARGET_QUESTIONS)) {
-            const subject = Subject[subjectKey];
-            const targetCount = TARGET_QUESTIONS[subjectKey];
-            let selectedSubjectQuestions = [];
+    // let allSelectedQuestions = [];
+
+    // try {
+    //     for (const subjectKey of Object.keys(TARGET_QUESTIONS)) {
+    //         const subject = Subject[subjectKey];
+    //         const targetCount = TARGET_QUESTIONS[subjectKey];
+    //         let selectedSubjectQuestions = [];
             
-            // Iterate over difficulty levels
-            const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
+    //         // Iterate over difficulty levels
+    //         const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
             
-            for (let i = 0; i < difficulties.length; i++) {
-                const diffKey = difficulties[i];
+    //         for (let i = 0; i < difficulties.length; i++) {
+    //             const diffKey = difficulties[i];
                 
-                let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
+    //             let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
                 
-                // Adjustment for the last difficulty (HARD) to ensure total count is met
-                if (i === difficulties.length - 1) {
-                    diffTargetCount = targetCount - selectedSubjectQuestions.length;
-                }
+    //             // Adjustment for the last difficulty (HARD) to ensure total count is met
+    //             if (i === difficulties.length - 1) {
+    //                 diffTargetCount = targetCount - selectedSubjectQuestions.length;
+    //             }
                 
-                if (diffTargetCount <= 0) continue;
+    //             if (diffTargetCount <= 0) continue;
 
-                const availableQuestions = await prisma.question.findMany({
-                    where: { subject: subject, difficulty: diffKey },
-                    select: { id: true }
-                });
+    //             const availableQuestions = await prisma.question.findMany({
+    //                 where: { subject: subject, difficulty: diffKey },
+    //                 select: { id: true }
+    //             });
 
-                if (availableQuestions.length < diffTargetCount) {
-                    selectedSubjectQuestions = selectedSubjectQuestions.concat(availableQuestions);
-                } else {
-                    const randomSelection = shuffleArray(availableQuestions).slice(0, diffTargetCount);
-                    selectedSubjectQuestions = selectedSubjectQuestions.concat(randomSelection);
-                }
-            }
+    //             if (availableQuestions.length < diffTargetCount) {
+    //                 selectedSubjectQuestions = selectedSubjectQuestions.concat(availableQuestions);
+    //             } else {
+    //                 const randomSelection = shuffleArray(availableQuestions).slice(0, diffTargetCount);
+    //                 selectedSubjectQuestions = selectedSubjectQuestions.concat(randomSelection);
+    //             }
+    //         }
 
-            shuffleArray(selectedSubjectQuestions);
-            allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
-        }
+    //         shuffleArray(selectedSubjectQuestions);
+    //         allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
+    //     }
 
-        if (allSelectedQuestions.length === 0) {
-             return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
-        }
+    //     if (allSelectedQuestions.length === 0) {
+    //          return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
+    //     }
 
-        const newPaper = await prisma.questionPaper.create({
-            data: {
-                title: title,
-                createdById: parseInt(adminId),
-                durationHours: 3,
-                startTime: new Date(startTime),
-                totalMarks: 160,
-                isActive: true,
-                paperQuestions: {
-                    create: allSelectedQuestions.map(q => ({
-                        questionId: q.id
-                    }))
-                }
-            },
-            include: {
-                paperQuestions: {
-                    select: { questionId: true }
-                }
-            }
-        });
+    //     const newPaper = await prisma.questionPaper.create({
+    //         data: {
+    //             title: title,
+    //             createdById: parseInt(adminId),
+    //             durationHours: 3,
+    //             startTime: new Date(startTime),
+    //             totalMarks: 160,
+    //             isActive: true,
+    //             paperQuestions: {
+    //                 create: allSelectedQuestions.map(q => ({
+    //                     questionId: q.id
+    //                 }))
+    //             }
+    //         },
+    //         include: {
+    //             paperQuestions: {
+    //                 select: { questionId: true }
+    //             }
+    //         }
+    //     });
 
-        res.status(201).json({
-            message: 'Question Paper created successfully.',
-            paperId: newPaper.id,
-            totalQuestions: newPaper.paperQuestions.length,
-        });
+    //     res.status(201).json({
+    //         message: 'Question Paper created successfully.',
+    //         paperId: newPaper.id,
+    //         totalQuestions: newPaper.paperQuestions.length,
+    //     });
 
-    } catch (error) {
-        console.error('Paper Generation Error:', error);
-        res.status(500).json({ message: 'Internal server error during paper generation.' });
-    }
+    // } catch (error) {
+    //     console.error('Paper Generation Error:', error);
+    //     res.status(500).json({ message: 'Internal server error during paper generation.' });
+    // }
 };
 
 const answerMap = {
