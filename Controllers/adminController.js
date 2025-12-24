@@ -313,101 +313,106 @@ const totalQuestions = async(req,res) => {
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
-    console.log(req);
-    res.status(201).json({message: 'Question Paper created successfully.'});
-    // const { adminId, title, startTime } = req.body;    
-    // // 🚨 Update validation to include startTime
-    // if (!adminId || !title || !startTime) {
-    //     return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
-    // }
+    const { adminId, title, startTime } = req.body;    
+    
+    // Validate required fields
+    if (!adminId || !title || !startTime) {
+        return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
+    }
 
-    // const DEFAULT_DISTRIBUTION = {
-    //     EASY: 0.30, 
-    //     MEDIUM: 0.40, 
-    //     HARD: 0.30
-    // };
+    const DEFAULT_DISTRIBUTION = {
+        EASY: 0.30, 
+        MEDIUM: 0.40, 
+        HARD: 0.30
+    };
 
-    // const TARGET_QUESTIONS = {
-    //     PHYSICS: 40,
-    //     CHEMISTRY: 40,
-    //     MATHS: 80
-    // };
+    const TARGET_QUESTIONS = {
+        PHYSICS: 40,
+        CHEMISTRY: 40,
+        MATHEMATICS: 80  // Fixed: Changed from MATHS to MATHEMATICS to match enum
+    };
 
-    // let allSelectedQuestions = [];
+    let allSelectedQuestions = [];
 
-    // try {
-    //     for (const subjectKey of Object.keys(TARGET_QUESTIONS)) {
-    //         const subject = Subject[subjectKey];
-    //         const targetCount = TARGET_QUESTIONS[subjectKey];
-    //         let selectedSubjectQuestions = [];
+    try {
+        for (const subjectKey of Object.keys(TARGET_QUESTIONS)) {
+            const subject = Subject[subjectKey];
+            const targetCount = TARGET_QUESTIONS[subjectKey];
+            let selectedSubjectQuestions = [];
             
-    //         // Iterate over difficulty levels
-    //         const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
+            // Iterate over difficulty levels
+            const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
             
-    //         for (let i = 0; i < difficulties.length; i++) {
-    //             const diffKey = difficulties[i];
+            for (let i = 0; i < difficulties.length; i++) {
+                const diffKey = difficulties[i];
                 
-    //             let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
+                let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
                 
-    //             // Adjustment for the last difficulty (HARD) to ensure total count is met
-    //             if (i === difficulties.length - 1) {
-    //                 diffTargetCount = targetCount - selectedSubjectQuestions.length;
-    //             }
+                // Adjustment for the last difficulty (HARD) to ensure total count is met
+                if (i === difficulties.length - 1) {
+                    diffTargetCount = targetCount - selectedSubjectQuestions.length;
+                }
                 
-    //             if (diffTargetCount <= 0) continue;
+                if (diffTargetCount <= 0) continue;
 
-    //             const availableQuestions = await prisma.question.findMany({
-    //                 where: { subject: subject, difficulty: diffKey },
-    //                 select: { id: true }
-    //             });
+                const availableQuestions = await prisma.question.findMany({
+                    where: { subject: subject, difficulty: diffKey },
+                    select: { id: true }
+                });
 
-    //             if (availableQuestions.length < diffTargetCount) {
-    //                 selectedSubjectQuestions = selectedSubjectQuestions.concat(availableQuestions);
-    //             } else {
-    //                 const randomSelection = shuffleArray(availableQuestions).slice(0, diffTargetCount);
-    //                 selectedSubjectQuestions = selectedSubjectQuestions.concat(randomSelection);
-    //             }
-    //         }
+                if (availableQuestions.length < diffTargetCount) {
+                    // Use all available questions if not enough
+                    selectedSubjectQuestions = selectedSubjectQuestions.concat(availableQuestions);
+                } else {
+                    // Randomly select the required number of questions
+                    const randomSelection = shuffleArray([...availableQuestions]).slice(0, diffTargetCount);
+                    selectedSubjectQuestions = selectedSubjectQuestions.concat(randomSelection);
+                }
+            }
 
-    //         shuffleArray(selectedSubjectQuestions);
-    //         allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
-    //     }
+            // Shuffle questions within each subject to randomize easy/medium/hard order
+            shuffleArray(selectedSubjectQuestions);
+            allSelectedQuestions = allSelectedQuestions.concat(selectedSubjectQuestions);
+        }
 
-    //     if (allSelectedQuestions.length === 0) {
-    //          return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
-    //     }
+        if (allSelectedQuestions.length === 0) {
+             return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
+        }
 
-    //     const newPaper = await prisma.questionPaper.create({
-    //         data: {
-    //             title: title,
-    //             createdById: parseInt(adminId),
-    //             durationHours: 3,
-    //             startTime: new Date(startTime),
-    //             totalMarks: 160,
-    //             isActive: true,
-    //             paperQuestions: {
-    //                 create: allSelectedQuestions.map(q => ({
-    //                     questionId: q.id
-    //                 }))
-    //             }
-    //         },
-    //         include: {
-    //             paperQuestions: {
-    //                 select: { questionId: true }
-    //             }
-    //         }
-    //     });
+        // Final shuffle to randomize all questions across subjects
+        shuffleArray(allSelectedQuestions);
 
-    //     res.status(201).json({
-    //         message: 'Question Paper created successfully.',
-    //         paperId: newPaper.id,
-    //         totalQuestions: newPaper.paperQuestions.length,
-    //     });
+        const newPaper = await prisma.questionPaper.create({
+            data: {
+                title: title,
+                createdById: parseInt(adminId),
+                durationHours: 3,
+                startTime: new Date(startTime),
+                totalMarks: 160,
+                isActive: true,
+                paperQuestions: {
+                    create: allSelectedQuestions.map(q => ({
+                        questionId: q.id
+                    }))
+                }
+            },
+            include: {
+                paperQuestions: {
+                    select: { questionId: true }
+                }
+            }
+        });
 
-    // } catch (error) {
-    //     console.error('Paper Generation Error:', error);
-    //     res.status(500).json({ message: 'Internal server error during paper generation.' });
-    // }
+        res.status(201).json({
+            message: 'Question Paper created successfully.',
+            paperId: newPaper.id,
+            totalQuestions: newPaper.paperQuestions.length,
+        });
+
+    } catch (error) {
+        console.error('Paper Generation Error:', error);
+        res.status(500).json({ message: 'Internal server error during paper generation.' });
+    }
 };
 
 const answerMap = {
@@ -1123,6 +1128,232 @@ const getQuestionCounts = async (req, res) => {
     }
 };
 
+// --- NEW ADMIN FUNCTION: Get availability grouped by difficulty and subject ---
+const getDifficultyAvailability = async (req, res) => {
+    try {
+        // Overall counts by difficulty
+        const byDifficulty = await prisma.question.groupBy({
+            by: ['difficulty'],
+            _count: { _all: true }
+        });
+
+        const totalAvailability = { EASY: 0, MEDIUM: 0, HARD: 0 };
+        byDifficulty.forEach((row) => {
+            totalAvailability[row.difficulty] = row._count._all;
+        });
+
+        // Per-subject counts by difficulty
+        const bySubjectDifficulty = await prisma.question.groupBy({
+            by: ['subject', 'difficulty'],
+            _count: { _all: true }
+        });
+
+        const bySubject = {};
+        bySubjectDifficulty.forEach((row) => {
+            if (!bySubject[row.subject]) {
+                bySubject[row.subject] = { EASY: 0, MEDIUM: 0, HARD: 0 };
+            }
+            bySubject[row.subject][row.difficulty] = row._count._all;
+        });
+
+        res.status(200).json({ success: true, availability: totalAvailability, bySubject });
+    } catch (error) {
+        console.error('getDifficultyAvailability Error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error while fetching difficulty availability.' });
+    }
+};
+
+
+// --- NEW ADMIN FUNCTION: Get difficulty stats for a specific exam ---
+const getDifficultyStats = async (req, res) => {
+    const { examId } = req.params;
+
+    try {
+        // Parse the examId
+        const parsedExamId = parseInt(examId);
+
+        if (isNaN(parsedExamId)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid exam ID provided.' 
+            });
+        }
+
+        // Verify the exam exists
+        const exam = await prisma.questionPaper.findUnique({
+            where: { id: parsedExamId },
+            select: { id: true, title: true }
+        });
+
+        if (!exam) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Exam not found.' 
+            });
+        }
+
+        // Aggregate question counts by difficulty for this exam
+        const difficultyStats = await prisma.paperQuestion.groupBy({
+            by: ['questionId'],
+            where: { paperId: parsedExamId },
+            _count: { questionId: true }
+        });
+
+        // Get actual question details to group by difficulty
+        const questionIds = difficultyStats.map(stat => stat.questionId);
+        const questions = await prisma.question.findMany({
+            where: { id: { in: questionIds } },
+            select: { id: true, difficulty: true }
+        });
+
+        // Group by difficulty
+        const stats = {
+            easy: 0,
+            medium: 0,
+            hard: 0
+        };
+
+        questions.forEach(q => {
+            const difficulty = q.difficulty.toLowerCase();
+            if (stats.hasOwnProperty(difficulty)) {
+                stats[difficulty]++;
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            examId: parsedExamId,
+            examTitle: exam.title,
+            stats
+        });
+
+    } catch (error) {
+        console.error('Get Difficulty Stats Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error while fetching difficulty stats.' 
+        });
+    }
+};
+
+// --- NEW ADMIN FUNCTION: Generate custom exam from difficulty slots ---
+const generateCustomExam = async (req, res) => {
+    const { title, slots, durationHours, startTime, adminId } = req.body;
+
+    try {
+        // Validate input
+        if (!title || !slots || !Array.isArray(slots) || slots.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid request. Title and slots array are required.' 
+            });
+        }
+
+        // Validate each slot has a difficulty field
+        for (const slot of slots) {
+            if (!slot.difficulty || !['EASY', 'MEDIUM', 'HARD'].includes(slot.difficulty.toUpperCase())) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Invalid difficulty in slot. Must be EASY, MEDIUM, or HARD.` 
+                });
+            }
+        }
+
+        // Count questions needed per difficulty for validation
+        const difficultyCount = {
+            EASY: 0,
+            MEDIUM: 0,
+            HARD: 0
+        };
+
+        slots.forEach(slot => {
+            const diff = slot.difficulty.toUpperCase();
+            difficultyCount[diff]++;
+        });
+
+        // Fetch ALL available questions for each difficulty (we'll randomly select from these pools)
+        const questionPools = {
+            EASY: [],
+            MEDIUM: [],
+            HARD: []
+        };
+
+        for (const difficulty of ['EASY', 'MEDIUM', 'HARD']) {
+            const questions = await prisma.question.findMany({
+                where: { difficulty: difficulty },
+                select: { id: true }
+            });
+
+            if (questions.length < difficultyCount[difficulty]) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `Insufficient questions for difficulty ${difficulty}. Needed: ${difficultyCount[difficulty]}, Available: ${questions.length}` 
+                });
+            }
+
+            // Shuffle the entire pool to ensure random selection
+            questionPools[difficulty] = shuffleArray([...questions]);
+        }
+
+        // NOW: Select questions based on slot order (preserves position structure)
+        const selectedQuestions = [];
+        const usedQuestionIds = new Set();
+        const poolIndexes = { EASY: 0, MEDIUM: 0, HARD: 0 };
+
+        slots.forEach((slot, index) => {
+            const difficulty = slot.difficulty.toUpperCase();
+            const pool = questionPools[difficulty];
+            
+            // Pick the next unused question from this difficulty's shuffled pool
+            let question = null;
+            while (poolIndexes[difficulty] < pool.length) {
+                const candidate = pool[poolIndexes[difficulty]];
+                poolIndexes[difficulty]++;
+                
+                if (!usedQuestionIds.has(candidate.id)) {
+                    question = candidate;
+                    usedQuestionIds.add(candidate.id);
+                    break;
+                }
+            }
+
+            if (question) {
+                selectedQuestions.push({ id: question.id });
+            }
+        });
+
+        // Create the custom exam in the database
+        // IMPORTANT: Do NOT shuffle selectedQuestions here - we want to preserve slot order!
+        const newPaper = await prisma.questionPaper.create({
+            data: {
+                title,
+                createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
+                durationHours: parseInt(durationHours) || 3,
+                startTime: startTime ? new Date(startTime) : new Date(),
+                totalMarks: selectedQuestions.length,
+                isActive: false, // Set to false by default for custom exams
+                paperQuestions: {
+                    create: selectedQuestions.map(q => ({ questionId: q.id }))
+                }
+            }
+        });
+
+        res.status(201).json({
+            success: true,
+            message: 'Custom exam created successfully.',
+            paperId: newPaper.id,
+            totalQuestions: selectedQuestions.length,
+            distribution: difficultyCount
+        });
+
+    } catch (error) {
+        console.error('Generate Custom Exam Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Internal server error while generating custom exam.' 
+        });
+    }
+};
 
 module.exports = {
     generateQuestionPaper,
@@ -1138,7 +1369,10 @@ module.exports = {
     getExamStats,
     getReports,
     getTopStudents,
-    totalQuestions
+    totalQuestions,
+    getDifficultyStats,
+    generateCustomExam,
+    getDifficultyAvailability
 };
 
 // --- NEW ADMIN FUNCTION: Get question counts grouped by subject and topic ---

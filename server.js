@@ -84,6 +84,12 @@ app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminControll
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
 app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);
 app.get('/api/admin/total-questions', protect, authorize('ADMIN','TEACHER'), adminController.getQuestionCounts);
+app.get('/api/admin/difficulty-availability', protect, authorize('ADMIN','TEACHER'), adminController.getDifficultyAvailability);
+
+// --- NEW CUSTOM DIFFICULTY FLOW ROUTES ---
+app.get('/api/admin/difficulty-stats/:examId', protect, authorize('ADMIN', 'TEACHER'), adminController.getDifficultyStats);
+app.post('/api/admin/generate-custom', protect, authorize('ADMIN', 'TEACHER'), adminController.generateCustomExam);
+
 // --- TEACHER ROUTES ---
 // Applied upload.single('csvFile') middleware to handle the file upload
 app.post('/api/teacher/save-questions', protect, authorize('ADMIN', 'TEACHER'), upload.any(), adminController.saveQuestionsToDb);
