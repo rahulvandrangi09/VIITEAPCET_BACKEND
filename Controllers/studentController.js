@@ -431,50 +431,48 @@ const getAttemptResult = async (req, res) => {
  * Helper function to map result data structure from the database
  * to the exact structure the Results.jsx frontend component expects.
  */
-const mapResultData = (result) => {
+const mapResultData = (result, rank = 'N/A', percentile = 'N/A') => {
 // ... (This function remains unchanged as it doesn't need startTime)
-    // analysisJson is stored as a JSON object by Prisma
-    const analysis = result.analysisJson || {};
-    const totalMarks = result.examAttempt.paper.totalMarks;
-    const startTime = result.examAttempt.startTime;
-    const endTime = result.examAttempt.endTime;
-    
-    // Compute time taken and accuracy
-    let timeTaken = "N/A";
-    if (startTime && endTime) {
-        const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        timeTaken = `${diffHours}h ${diffMinutes}m`;
-    }
+    // analysisJson is stored as a JSON object by Prisma
+    const analysis = result.analysisJson || {};
+    const totalMarks = result.examAttempt.paper.totalMarks;
+    const startTime = result.examAttempt.startTime;
+    const endTime = result.examAttempt.endTime;
+    
+    // Compute time taken and accuracy
+    let timeTaken = "N/A";
+    if (startTime && endTime) {
+        const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        timeTaken = `${diffHours}h ${diffMinutes}m`;
+    }
 
-    const accuracy = totalMarks > 0 ? `${((result.totalScore / totalMarks) * 100).toFixed(1)}%` : 'N/A';
+    const accuracy = totalMarks > 0 ? `${((result.totalScore / totalMarks) * 100).toFixed(1)}%` : 'N/A';
 
-    const getScore = (analysisObj, key) => {
-        if (!analysisObj) return 0;
-        const found = Object.keys(analysisObj).find(k => String(k).toUpperCase() === String(key).toUpperCase());
-        return found && analysisObj[found] && typeof analysisObj[found].score === 'number' ? analysisObj[found].score : (analysisObj[key]?.score || 0);
-    };
+    const getScore = (analysisObj, key) => {
+        if (!analysisObj) return 0;
+        const found = Object.keys(analysisObj).find(k => String(k).toUpperCase() === String(key).toUpperCase());
+        return found && analysisObj[found] && typeof analysisObj[found].score === 'number' ? analysisObj[found].score : (analysisObj[key]?.score || 0);
+    };
 
-    return {
-        // Use the Result ID as the unique key for the accordion/main display
-        id: result.id, 
-        paperId: result.examAttempt.paper.id,
-        examName: result.examAttempt.paper.title,
-        date: result.createdAt.toISOString().split('T')[0],
-        totalMarks: totalMarks,
-        score: result.totalScore, // Send the raw score for processing
-        
-        // dynamic calculated fields:
-        timeTaken: timeTaken,
-        accuracy: accuracy, 
-        rank: "N/A",
-        percentile: "N/A",
-        
-        // Extract subject scores from the JSON analysis field (case-insensitive)
-        mathsScore: getScore(analysis, 'MATHEMATICS'),
-        physicsScore: getScore(analysis, 'PHYSICS'),
-        chemistryScore: getScore(analysis, 'CHEMISTRY'),
+    return {
+        // Use the Result ID as the unique key for the accordion/main display
+        id: result.id, 
+        paperId: result.examAttempt.paper.id,
+        examName: result.examAttempt.paper.title,
+        date: result.createdAt.toISOString().split('T')[0],
+        totalMarks: totalMarks,
+        score: result.totalScore, // Send the raw score for processing
+        
+        // dynamic calculated fields:
+        timeTaken: timeTaken,
+        accuracy: accuracy, 
+        rank: rank,
+        percentile: percentile,        
+        // Extract subject scores from the JSON analysis field (case-insensitive)
+        mathsScore: getScore(analysis, 'MATHEMATICS'),
+        physicsScore: getScore(analysis, 'PHYSICS'),        chemistryScore: getScore(analysis, 'CHEMISTRY'),
         insights: ["Review topics with lower scores.", "Focus on time management."],
     };
 };
@@ -513,25 +511,61 @@ const getStudentResultsHistory = async (req, res) => {
         });
 
         // Map the raw Prisma objects into the standardized frontend structure
-        const history = results.map(mapResultData);
+        // Calculate rank and percentile for each exam
+        const history = await Promise.all(results.map(async (result) => {
+            const paperId = result.examAttempt.paper.id;
+            const studentScore = result.totalScore;
+            
+            // Fetch all results for this paper to calculate rank and percentile
+            const allPaperResults = await prisma.result.findMany({
+                where: {
+                    examAttempt: {
+                        paperId: paperId,
+                        isCompleted: true,
+                    }
+                },
+                select: {
+                    id: true,
+                    totalScore: true,
+                    examAttempt: {
+                        select: {
+                            studentId: true,
+                        }
+                    }
+                }
+            });
+            
+            // Calculate rank: count how many students scored better
+            const betterScores = allPaperResults.filter(r => r.totalScore > studentScore).length;
+            const rank = betterScores + 1; // Rank is 1-based
+            
+            // Calculate percentile: percentage of students who scored less
+            const totalStudents = allPaperResults.length;
+            const worseScores = totalStudents - betterScores - 1; // -1 for the current student
+            const percentile = totalStudents > 1 ? Math.round((worseScores / (totalStudents - 1)) * 100) : 100;
+            
+            return mapResultData(result, rank, percentile);
+        }));
+        
+        console.log(history);
 
-        return res.status(200).json({
-            message: "Student results history fetched successfully.",
-            history: history,
-        });
+        return res.status(200).json({
+            message: "Student results history fetched successfully.",
+            history: history,
+        });
 
-    } catch (error) {
-        console.error('Get History Error:', error);
-        // Return 500 error if database operation fails unexpectedly
-        return res.status(500).json({ message: 'Internal server error while fetching results history.' });
-    }
+    } catch (error) {
+        console.error('Get History Error:', error);
+        // Return 500 error if database operation fails unexpectedly
+        return res.status(500).json({ message: 'Internal server error while fetching results history.' });
+    }
 };
 
 
 module.exports = {
-    getAvailableExams,
-    startExam,
-    submitAttempt,
-    getAttemptResult,
-    getStudentResultsHistory
+    getAvailableExams,
+    startExam,
+    submitAttempt,
+    getAttemptResult,
+    getStudentResultsHistory
 };
