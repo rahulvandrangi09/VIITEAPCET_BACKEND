@@ -1,6 +1,7 @@
 // utils/mail.js
 
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 // Load environment variables (ensure dotenv is available and configured in your project)
 require('dotenv').config(); 
 
@@ -18,34 +19,67 @@ const transporter = nodemailer.createTransport({
 });
 
 // 2. Mail Sending Function (Real Implementation)
-const sendMail = (to, subject, htmlContent) => {
-    // Basic check to prevent crashes if config is missing
-    if (!process.env.MAIL_SMTP_USER || !process.env.MAIL_SMTP_PASS || !process.env.MAIL_SENDER_EMAIL) {
-        console.error('❌ EMAIL CONFIGURATION ERROR: Environment variables (MAIL_SMTP_USER/PASS/SENDER_EMAIL) are not fully set.');
-        console.error('Using simulated log instead of sending real email.');
-        // Fallback to simulation log
-        console.log('-------------------------------------------');
-        console.log(`MAIL LOG: Subject: ${subject} | To: ${to}`);
-        console.log('-------------------------------------------');
-        return;
+const sendMail = async (to, subject, htmlContent) => {
+    // Priority 1: Use Sender.net API if API key is provided (no SMTP required)
+    if (process.env.SENDER_API_KEY) {
+        const payload = {
+            from: {
+                // Sender.net requires a verified sender; keep default to no-reply@sender.net
+                email: process.env.SENDER_FROM_EMAIL || 'no-reply@sender.net',
+                name: process.env.SENDER_FROM_NAME || 'VIIT Mock Portal'
+            },
+            to: [
+                { email: to }
+            ],
+            subject: subject,
+            html: htmlContent
+        };
+
+        try {
+            const resp = await axios.post(
+                'https://api.sender.net/v2/email/send',
+                payload,
+                {
+                    headers: {
+                        Authorization: `Bearer ${process.env.SENDER_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            console.log('✅ Sender.net email queued:', resp.data?.message || resp.status);
+            return resp.data;
+        } catch (err) {
+            console.error('❌ Sender.net send error:', err.response?.data || err.message);
+            // Do not throw — keep behavior non-fatal for callers that don't await.
+            return null;
+        }
     }
 
-    const mailOptions = {
-        from: process.env.MAIL_SENDER_EMAIL, // The 'From' address from your .env
-        to: to,
-        subject: subject,
-        html: htmlContent,
-    };
+    // Priority 2: Fallback to existing SMTP transporter if configured
+    if (process.env.MAIL_SMTP_USER && process.env.MAIL_SMTP_PASS && process.env.MAIL_SENDER_EMAIL) {
+        const mailOptions = {
+            from: process.env.MAIL_SENDER_EMAIL,
+            to,
+            subject,
+            html: htmlContent
+        };
 
-    transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-            console.error('❌ Real Mail Send Error:', error.message);
-            console.error('HINT: For Gmail, ensure 2FA is on and you are using a generated App Password for MAIL_SMTP_PASS.');
-        } else {
-            console.log('✅ Email sent successfully. Response:', info.response);
-        }
-    });
-    // Removed the simulated Promise delay/return
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                console.error('❌ SMTP send error:', error.message);
+            } else {
+                console.log('✅ SMTP email sent. Response:', info.response);
+            }
+        });
+        return null;
+    }
+
+    // Final fallback: simulate / log the email so project doesn't break in dev
+    console.error('⚠️ EMAIL CONFIG NOT FOUND: Set SENDER_API_KEY or MAIL_SMTP_* env variables.');
+    console.log('-------------------------------------------');
+    console.log(`MAIL LOG: Subject: ${subject} | To: ${to}`);
+    console.log('-------------------------------------------');
+    return null;
 };
 
 // 3. Email Content Creation Function (Registration)
