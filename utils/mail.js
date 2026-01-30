@@ -14,33 +14,23 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendMail = async (to, subject, htmlContent) => {
-
-    if (process.env.MAIL_SMTP_USER && process.env.MAIL_SMTP_PASS && process.env.MAIL_SENDER_EMAIL) {
-        const mailOptions = {
+    try {
+        const info = await transporter.sendMail({
             from: process.env.MAIL_SENDER_EMAIL,
             to,
             subject,
-            html: htmlContent
-        };
-
-        transporter.sendMail(mailOptions, (error, info) => {
-            if (error) {
-                console.log("err: ",error);
-                console.error('❌ SMTP send error:', error.message);
-            } else {
-                console.log('✅ SMTP email sent. Response:', info.response);
-            }
+            html: htmlContent,
         });
-        return null;
-    }
 
-    // Final fallback: simulate / log the email so project doesn't break in dev
-    console.error('⚠️ EMAIL CONFIG NOT FOUND: Set SENDER_API_KEY or MAIL_SMTP_* env variables.');
-    console.log('-------------------------------------------');
-    console.log(`MAIL LOG: Subject: ${subject} | To: ${to}`);
-    console.log('-------------------------------------------');
-    return null;
+        console.log("✅ Email sent:", info.messageId);
+        return true;
+
+    } catch (error) {
+        console.error("❌ SMTP Error:", error.message);
+        return false;
+    }
 };
+
 
 // 3. Email Content Creation Function (Registration)
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
