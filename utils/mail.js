@@ -1,6 +1,6 @@
-import { createTransport } from 'nodemailer';
-
-const transporter = createTransport({
+const nodemailer = require('nodemailer');
+require('dotenv').config(); 
+const transporter = nodemailer.createTransport({
     host: process.env.MAIL_SMTP_HOST,
     port: Number(process.env.MAIL_SMTP_PORT),
     secure: false, // true only for 465
@@ -179,7 +179,7 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
 };
 
 
-export default {
+module.exports = {
     sendMail,
     createRegistrationMail,
     createResultMail,

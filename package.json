@@ -1,6 +1,7 @@
 {
   "name": "viit-mock-portal-backend",
   "version": "1.0.0",
+  "type": "commonjs",
   "description": "Backend for VIIT Mock EAPCET Portal using Node, Express, Prisma, and PostgreSQL.",
   "main": "server.js",
   "scripts": {
