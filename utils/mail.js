@@ -3,12 +3,15 @@ const axios = require('axios');
 
 require('dotenv').config(); 
 const transporter = nodemailer.createTransport({
-    host: process.env.MAIL_SMTP_HOST, 
-    port: process.env.MAIL_SMTP_PORT, 
-    secure: process.env.MAIL_SMTP_SECURE === 'false', 
+    host: process.env.MAIL_SMTP_HOST,
+    port: Number(process.env.MAIL_SMTP_PORT),
+    secure: false, // true only for 465
     auth: {
-        user: process.env.MAIL_SMTP_USER, 
-        pass: process.env.MAIL_SMTP_PASS, 
+        user: process.env.MAIL_SMTP_USER,
+        pass: process.env.MAIL_SMTP_PASS,
+    },
+    tls: {
+        rejectUnauthorized: false,
     },
 });
 
@@ -24,6 +27,7 @@ const sendMail = async (to, subject, htmlContent) => {
 
         transporter.sendMail(mailOptions, (error, info) => {
             if (error) {
+                console.log("err: ",error);
                 console.error('❌ SMTP send error:', error.message);
             } else {
                 console.log('✅ SMTP email sent. Response:', info.response);
