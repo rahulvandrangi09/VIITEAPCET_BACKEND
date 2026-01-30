@@ -1,65 +1,22 @@
-// utils/mail.js
-
 const nodemailer = require('nodemailer');
 const axios = require('axios');
-// Load environment variables (ensure dotenv is available and configured in your project)
-require('dotenv').config(); 
 
-// 1. Configure the Nodemailer Transport
-// This object uses your .env variables to connect to your SMTP server (e.g., Gmail)
+require('dotenv').config(); 
 const transporter = nodemailer.createTransport({
-    // Use environment variables for host and port
     host: process.env.MAIL_SMTP_HOST, 
     port: process.env.MAIL_SMTP_PORT, 
-    secure: process.env.MAIL_SMTP_SECURE === 'true', // Use SSL/TLS if true (recommended for 465)
+    secure: process.env.MAIL_SMTP_SECURE === 'false', 
     auth: {
-        user: process.env.MAIL_SMTP_USER, // Your sender email address
-        pass: process.env.MAIL_SMTP_PASS, // Your App Password
+        user: process.env.MAIL_SMTP_USER, 
+        pass: process.env.MAIL_SMTP_PASS, 
     },
 });
 
-// 2. Mail Sending Function (Real Implementation)
 const sendMail = async (to, subject, htmlContent) => {
-    // Priority 1: Use Sender.net API if API key is provided (no SMTP required)
-    if (process.env.SENDER_API_KEY) {
-        console.log("Hi mohith!");
-        const payload = {
-            from: {
-                // Sender.net requires a verified sender; keep default to no-reply@sender.net
-                email: process.env.SENDER_FROM_EMAIL || 'no-reply@sender.net',
-                name: process.env.SENDER_FROM_NAME || 'VIIT Mock Portal'
-            },
-            to: [
-                { email: to }
-            ],
-            subject: subject,
-            html: htmlContent
-        };
 
-        try {
-            const resp = await axios.post(
-                'https://api.sender.net/v2/email/send',
-                payload,
-                {
-                    headers: {
-                        Authorization: `Bearer ${process.env.SENDER_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-            console.log('✅ Sender.net email queued:', resp.data?.message || resp.status);
-            return resp.data;
-        } catch (err) {
-            console.error('❌ Sender.net send error:', err.response?.data || err.message);
-            // Do not throw — keep behavior non-fatal for callers that don't await.
-            return null;
-        }
-    }
-
-    // Priority 2: Fallback to existing SMTP transporter if configured
-    if (process.env.MAIL_SMTP_USER && process.env.MAIL_SMTP_PASS && process.env.MAIL_SENDER_EMAIL) {
+    if (process.env.MAIL_SMTP_USER && process.env.MAIL_SMTP_PASS) {
         const mailOptions = {
-            from: process.env.MAIL_SENDER_EMAIL,
+            from: process.env.MAIL_SMTP_USER,
             to,
             subject,
             html: htmlContent
