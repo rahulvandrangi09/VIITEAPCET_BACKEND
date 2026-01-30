@@ -22,6 +22,7 @@ const transporter = nodemailer.createTransport({
 const sendMail = async (to, subject, htmlContent) => {
     // Priority 1: Use Sender.net API if API key is provided (no SMTP required)
     if (process.env.SENDER_API_KEY) {
+        console.log("Hi mohith!");
         const payload = {
             from: {
                 // Sender.net requires a verified sender; keep default to no-reply@sender.net
