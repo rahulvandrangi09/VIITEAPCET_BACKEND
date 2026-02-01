@@ -143,7 +143,7 @@ id            Int             @id @default(autoincrement())
 title         String
 durationHours Int             @default(3)
 totalMarks    Int             @default(160) // 40 P + 40 C + 80 M
-isActive      Boolean         @default(false)
+isActive      Boolean         @default(true)
 startTime        DateTime?
 // Creator
 createdBy     User            @relation(fields: [createdById], references: [id])
