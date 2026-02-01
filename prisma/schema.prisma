@@ -3,26 +3,133 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
-
 datasource db {
-provider = "postgresql"
-url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-// ====================================================================
-// ENUMS
-// ====================================================================
+model User {
+  id        Int             @id @default(autoincrement())
+  email     String          @unique
+  password  String
+  fullName  String
+  role      Role
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  questions Question[]
+  papers    QuestionPaper[]
+}
+
+model Student {
+  id                      Int            @id @default(autoincrement())
+  studentId               String?        @unique
+  password                String
+  fullName                String
+  fatherName              String
+  motherName              String
+  dateOfBirth             DateTime       @db.Date
+  gender                  String
+  email                   String         @unique
+  mobileNumber            String
+  alternativeMobileNumber String?
+  stream                  Stream
+  qualifyingExam          QualifyingExam
+  yearOfPassing           Int
+  medium                  String?
+  placeOfStudy            String?
+  marks                   String?
+  collegeName             String?
+  collegeAddress          String?
+  category                Category
+  minorityStatus          String
+  address                 String
+  city                    String
+  state                   String
+  pincode                 String
+  photo                   String?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  refreshToken            String?
+  isAttemptingExam        Boolean        @default(false)
+  isSafe                  Boolean        @default(false)
+  examAttempts            ExamAttempt[]
+}
+
+model Question {
+  id               Int             @id @default(autoincrement())
+  text             String
+  options          String[]
+  correctAnswer    String
+  subject          Subject
+  difficulty       Difficulty
+  uploadedById     Int
+  createdAt        DateTime        @default(now())
+  optionAImageUrl  String?
+  optionBImageUrl  String?
+  optionCImageUrl  String?
+  optionDImageUrl  String?
+  questionImageUrl String?
+  topic            String
+  paperQuestions   PaperQuestion[]
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
+}
+
+model QuestionPaper {
+  id             Int             @id @default(autoincrement())
+  title          String
+  durationHours  Int             @default(3)
+  totalMarks     Int             @default(160)
+  isActive       Boolean         @default(true)
+  createdById    Int
+  createdAt      DateTime        @default(now())
+  startTime      DateTime?
+  examAttempts   ExamAttempt[]
+  paperQuestions PaperQuestion[]
+  createdBy      User            @relation(fields: [createdById], references: [id])
+}
+
+model PaperQuestion {
+  paperId    Int
+  questionId Int
+  paper      QuestionPaper @relation(fields: [paperId], references: [id])
+  question   Question      @relation(fields: [questionId], references: [id])
+
+  @@id([paperId, questionId])
+}
+
+model ExamAttempt {
+  id          Int           @id @default(autoincrement())
+  studentId   Int
+  paperId     Int
+  startTime   DateTime      @default(now())
+  endTime     DateTime?
+  answers     Json?
+  isCompleted Boolean       @default(false)
+  score       Int           @default(0)
+  paper       QuestionPaper @relation(fields: [paperId], references: [id])
+  student     Student       @relation(fields: [studentId], references: [id])
+  result      Result?
+}
+
+model Result {
+  id           Int         @id @default(autoincrement())
+  attemptId    Int         @unique
+  totalScore   Int
+  analysisJson Json?
+  createdAt    DateTime    @default(now())
+  examAttempt  ExamAttempt @relation(fields: [attemptId], references: [id])
+}
 
 enum Role {
-STUDENT
-TEACHER
-ADMIN
+  STUDENT
+  TEACHER
+  ADMIN
 }
 
 enum Difficulty {
-EASY     // 1
-MEDIUM   // 2
-HARD     // 3
+  EASY
+  MEDIUM
+  HARD
 }
 
 enum Subject {
@@ -32,169 +139,24 @@ enum Subject {
 }
 
 enum Stream {
-ENGINEERING
-PHARMACY
+  ENGINEERING
+  PHARMACY
 }
 
 enum QualifyingExam {
-INTERMEDIATE_REGULAR
-INTERMEDIATE_VOCATIONAL
-BRIDGE_COURSE
+  INTERMEDIATE_REGULAR
+  INTERMEDIATE_VOCATIONAL
+  BRIDGE_COURSE
 }
 
 enum Category {
-OC
-BC_A
-BC_B
-BC_C
-BC_D
-BC_E
-SC
-ST
-EWS
-}
-
-// ====================================================================
-// MODELS
-// ====================================================================
-
-// For Teacher/Admin accounts
-model User {
-id       Int    @id @default(autoincrement())
-email    String @unique
-password String
-fullName String
-role     Role
-
-questions   Question[]
-papers      QuestionPaper[]
-
-createdAt DateTime @default(now())
-updatedAt DateTime @updatedAt
-}
-
-// Student Model (as provided)
-model Student {
-id                        Int             @id @default(autoincrement())
-studentId                 String?         @unique // Login ID
-password                  String          // Hashed password
-fullName                  String
-fatherName                String
-motherName                String
-dateOfBirth               DateTime        @db.Date // Store only date
-gender                    String
-email                     String          @unique
-mobileNumber              String
-alternativeMobileNumber   String?
-stream                    Stream
-qualifyingExam            QualifyingExam
-yearOfPassing             Int
-medium                    String?
-placeOfStudy              String?
-marks                     String?
-collegeName               String?
-collegeAddress            String?
-category                  Category
-minorityStatus            String
-address                   String
-city                      String
-state                     String
-pincode                   String
-photo                     String?
-refreshToken              String?
-
-createdAt                 DateTime        @default(now())
-updatedAt                 DateTime        @updatedAt
-
-isSafe                    Boolean         @default(false)
-isAttemptingExam          Boolean         @default(false)
-
-examAttempts              ExamAttempt[]
-}
-
-model Question {
-  id             Int           @id @default(autoincrement())
-  text           String        // The question text (supports rich text)
-  options        String[]      // Array of options (JSON stringified)
-  correctAnswer  String        // Index or value of the correct option
-  subject        Subject
-  difficulty     Difficulty    // EASY (1), MEDIUM (2), HARD (3)
-  
-  topic String
-
-  // --- NEW FIELDS FOR IMAGES ---
-  questionImageUrl String?
-  optionAImageUrl  String?
-  optionBImageUrl  String?
-  optionCImageUrl  String?
-  optionDImageUrl  String?
-  // -----------------------------
-
-  uploadedBy     User          @relation(fields: [uploadedById], references: [id])
-  uploadedById   Int
-
-  createdAt      DateTime      @default(now())
-  // Link to the paper it belongs to
-  paperQuestions PaperQuestion[]
-}
-
-model QuestionPaper {
-id            Int             @id @default(autoincrement())
-title         String
-durationHours Int             @default(3)
-totalMarks    Int             @default(160) // 40 P + 40 C + 80 M
-isActive      Boolean         @default(true)
-startTime        DateTime?
-// Creator
-createdBy     User            @relation(fields: [createdById], references: [id])
-createdById   Int
-
-// Questions in the paper
-paperQuestions PaperQuestion[]
-examAttempts   ExamAttempt[]
-
-createdAt     DateTime        @default(now())
-}
-
-// Intermediate table for Many-to-Many relationship between Question and QuestionPaper
-model PaperQuestion {
-paper         QuestionPaper @relation(fields: [paperId], references: [id])
-paperId       Int
-question      Question      @relation(fields: [questionId], references: [id])
-questionId    Int
-
-@@id([paperId, questionId])
-}
-
-model ExamAttempt {
-id            Int             @id @default(autoincrement())
-student       Student         @relation(fields: [studentId], references: [id])
-studentId     Int
-
-paper         QuestionPaper   @relation(fields: [paperId], references: [id])
-paperId       Int
-
-startTime     DateTime        @default(now())
-endTime       DateTime?
-
-// Store student answers, can be a JSON string or an array of objects
-answers       Json?
-
-isCompleted   Boolean         @default(false)
-score         Int             @default(0)
-
-result        Result? // 1 to 1 relation
-}
-
-model Result {
-id            Int         @id @default(autoincrement())
-examAttempt   ExamAttempt @relation(fields: [attemptId], references: [id])
-attemptId     Int         @unique // Ensures 1:1 relation
-
-totalScore    Int
-
-// Subject-wise scores and analysis (JSON stringified for complex data)
-analysisJson  Json? // E.g., { physics: { score: 35, total: 40, weakAreas: ['Mechanics'] }, chemistry: {...} }
-
-createdAt     DateTime    @default(now())
+  OC
+  BC_A
+  BC_B
+  BC_C
+  BC_D
+  BC_E
+  SC
+  ST
+  EWS
 }
