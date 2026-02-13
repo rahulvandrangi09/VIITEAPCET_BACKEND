@@ -77,6 +77,7 @@ model Question {
 model QuestionPaper {
   id             Int             @id @default(autoincrement())
   title          String
+  accessCode     String          @unique
   durationHours  Int             @default(3)
   totalMarks     Int             @default(160)
   isActive       Boolean         @default(true)
