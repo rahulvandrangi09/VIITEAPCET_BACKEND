@@ -117,23 +117,28 @@ const startExam = async (req, res) => {
         });
 
         if (!paper) {
+            console.log(`Start Exam Error: Paper with ID ${parsedPaperId} not found.`); 
             return res.status(404).json({ message: 'Question paper not found.' });
         }
         
         // 🚨 NEW ACCESS CHECK: Is the student within the 15-minute window?
         const scheduledStartTimeMs = paper.startTime ? paper.startTime.getTime() : null;
         
-        if (scheduledStartTimeMs) {
-            const startWindowEndMs = scheduledStartTimeMs + LATE_START_WINDOW_MS;
+        // Commenting out the strict start time check to allow students to start within the 15-minute window after the scheduled start time.
+        // if (scheduledStartTimeMs) {
+        //     const startWindowEndMs = scheduledStartTimeMs + LATE_START_WINDOW_MS;
 
-            if (now.getTime() < scheduledStartTimeMs) {
-                return res.status(403).json({ message: `Exam is scheduled to start at ${paper.startTime.toLocaleString()}. Please wait.` });
-            }
+        //     if (now.getTime() < scheduledStartTimeMs) {
+        //         console.log(now.getTime());
+        //         console.log(`Exam is scheduled to start at ${paper.startTime.toLocaleString()}. Please wait.`);
+        //         return res.status(403).json({ message: `Exam is scheduled to start at ${paper.startTime.toLocaleString()}. Please wait.` });
+        //     }
 
-            if (now.getTime() > startWindowEndMs) {
-                return res.status(403).json({ message: 'The 15-minute window to start this exam has expired.' });
-            }
-        }
+        //     if (now.getTime() > startWindowEndMs) {
+        //         console.log('The 15-minute window to start this exam has expired.' );
+        //         return res.status(403).json({ message: 'The 15-minute window to start this exam has expired.' });
+        //     }
+        // }
         
         // 1. Check if the student already has an ongoing attempt for this paper
         let attempt = await prisma.examAttempt.findFirst({
@@ -172,7 +177,7 @@ const startExam = async (req, res) => {
         const durationInMilliseconds = paper.durationHours * 3600 * 1000;
         const endTime = new Date(attempt.startTime.getTime() + durationInMilliseconds);
         const timeRemaining = Math.max(0, Math.floor((endTime.getTime() - new Date().getTime()) / 1000));
-
+        console.log(isResuming ? 'Exam resumed successfully.' : 'Exam started successfully.');
 
         res.status(200).json({
             message: isResuming ? 'Exam resumed successfully.' : 'Exam started successfully.',
@@ -561,11 +566,52 @@ const getStudentResultsHistory = async (req, res) => {
     }
 };
 
+const verifyCode = async (req, res) => {
+    const { paperId, accessCode } = req.body;
+
+    if (!paperId || !accessCode) {
+        return res.status(400).json({ message: 'Both `paperId` and `accessCode` are required.' });
+    }
+
+    try {
+        const parsedPaperId = parseInt(paperId);
+        if (Number.isNaN(parsedPaperId)) {
+            return res.status(400).json({ message: 'Invalid `paperId`.' });
+        }
+
+        const paper = await prisma.questionPaper.findUnique({
+            where: { id: parsedPaperId },
+            select: { id: true, accessCode: true, title: true, isActive: true }
+        });
+
+        if (!paper) {
+            return res.status(404).json({ message: 'Question paper not found.' });
+        }
+
+        // If paper has no accessCode configured, treat as not required
+        if (!paper.accessCode) {
+            return res.status(200).json({ valid: true, message: 'No access code required for this paper.', paperId: paper.id });
+        }
+
+        // Strict string comparison (trim user input)
+        if (String(paper.accessCode) === String(accessCode).trim()) {
+            return res.status(200).json({ valid: true, message: 'Access code verified.', paperId: paper.id, title: paper.title, isActive: paper.isActive });
+        }
+
+        return res.status(403).json({ valid: false, message: 'Invalid access code.' });
+
+    } catch (error) {
+        console.error('verifyCode Error:', error);
+        return res.status(500).json({ message: 'Internal server error while verifying access code.' });
+    }
+};
+
 
 module.exports = {
     getAvailableExams,
     startExam,
     submitAttempt,
     getAttemptResult,
-    getStudentResultsHistory
+    getStudentResultsHistory,
+    verifyCode
 };

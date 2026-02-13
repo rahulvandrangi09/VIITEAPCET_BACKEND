@@ -102,6 +102,7 @@ app.get('/api/student/results/history', protect, authorize('STUDENT'), studentCo
 app.get('/api/student/exams', protect, authorize('STUDENT'), studentController.getAvailableExams);
 app.post('/api/student/start-exam', protect, authorize('STUDENT'), studentController.startExam);
 app.post('/api/student/submit-attempt', protect, authorize('STUDENT'), studentController.submitAttempt);
+app.post('/api/student/verify-code',protect,authorize('STUDENT'),studentController.verifyCode);
 
 // Connect to DB and Start Server
 async function main() {
