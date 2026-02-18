@@ -1,9 +1,10 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config(); 
+
 const transporter = nodemailer.createTransport({
     host: process.env.MAIL_SMTP_HOST,
     port: Number(process.env.MAIL_SMTP_PORT),
-    secure: false, // true only for 465
+    secure: false, 
     auth: {
         user: process.env.MAIL_SMTP_USER,
         pass: process.env.MAIL_SMTP_PASS,
@@ -11,6 +12,15 @@ const transporter = nodemailer.createTransport({
     tls: {
         rejectUnauthorized: false,
     },
+    family: 4 
+});
+
+transporter.verify(function (error, success) {
+    if (error) {
+        console.error("❌ Nodemailer config error:", error);
+    } else {
+        console.log("✅ Nodemailer is ready to send emails!");
+    }
 });
 
 const sendMail = async (to, subject, htmlContent) => {
@@ -32,9 +42,7 @@ const sendMail = async (to, subject, htmlContent) => {
 };
 
 
-// 3. Email Content Creation Function (Registration)
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
-    // Improved HTML template for better readability in actual email clients
     return `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
             <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIIT Mock Portal Registration Successful!</h2>
@@ -61,19 +69,16 @@ const createRegistrationMail = (fullName, studentId, rawPassword) => {
     `;
 };
 
-// 5. Email Content Creation Function (Results with Voucher) - For Top 10 Students
 const createResultMailWithVoucher = (fullName, totalScore, totalMarks, analysis, voucherCode, rank) => {
     let weaknessHtml = '';
     const weakSubjects = [];
 
-    // 1. Create a "Safe" analysis object with defaults
     const safeAnalysis = {
         PHYSICS: analysis?.PHYSICS || { score: 0, total: 0 },
         CHEMISTRY: analysis?.CHEMISTRY || { score: 0, total: 0 },
         MATHEMATICS: analysis?.MATHEMATICS || analysis?.MATHS || { score: 0, total: 0 }
     };
 
-    // 2. Logic to build the improvement suggestions
     for (const subject in safeAnalysis) {
         const data = safeAnalysis[subject];
         if (data.total > 0 && data.score < (data.total / 2)) {
@@ -118,23 +123,18 @@ const createResultMailWithVoucher = (fullName, totalScore, totalMarks, analysis,
     `;
 };
 
-// 4. Email Content Creation Function (Results) - Your original logic is maintained
 const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
     let weaknessHtml = '';
     const weakSubjects = [];
 
-    // 1. Create a "Safe" analysis object with defaults
-    // This prevents "Cannot read property 'score' of undefined"
     const safeAnalysis = {
         PHYSICS: analysis?.PHYSICS || { score: 0, total: 0 },
         CHEMISTRY: analysis?.CHEMISTRY || { score: 0, total: 0 },
         MATHEMATICS: analysis?.MATHEMATICS || analysis?.MATHS || { score: 0, total: 0 }
     };
 
-    // 2. Logic to build the improvement suggestions
     for (const subject in safeAnalysis) {
         const data = safeAnalysis[subject];
-        // Only suggest improvement if they actually had questions (total > 0)
         if (data.total > 0 && data.score < (data.total / 2)) {
             weakSubjects.push(subject);
             weaknessHtml += `<li><strong>${subject}:</strong> Score: ${data.score}/${data.total}</li>`;
@@ -173,5 +173,5 @@ module.exports = {
     sendMail,
     createRegistrationMail,
     createResultMail,
-    createResultMailWithVoucher // 🚨 NEW EXPORT
+    createResultMailWithVoucher 
 };
