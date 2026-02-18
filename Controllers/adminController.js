@@ -32,6 +32,24 @@ const decodeHtmlEntities = (str) => {
         .replace(/&#39;/g, "'");
 };
 
+// Generate a 6-character access code: 4 digits followed by 2 alphanumeric chars.
+// Ensures uniqueness by checking the database with a limited retry loop.
+const generatePaperCode = async () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const digits = Math.floor(1000 + Math.random() * 9000).toString();
+        let suffix = '';
+        for (let i = 0; i < 2; i++) {
+            suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const code = `${digits}${suffix}`;
+        const existing = await prisma.questionPaper.findUnique({ where: { accessCode: code } }).catch(() => null);
+        if (!existing) return code;
+    }
+    throw new Error('Unable to generate unique access code for question paper.');
+};
+
 
 const generateCustomQuestionPaper = async (req, res) => {
     const { adminId, title, distribution, durationHours, startTime } = req.body;
@@ -116,9 +134,12 @@ const generateCustomQuestionPaper = async (req, res) => {
         // 4. Save to Database
         shuffleArray(allSelectedQuestions); // Final randomize for the actual paper order
 
+        const accessCode = await generatePaperCode();
+
         const newPaper = await prisma.questionPaper.create({
             data: {
                 title,
+                accessCode,
                 createdById: parseInt(adminId),
                 durationHours: parseInt(durationHours) || 3,
                 startTime: new Date(startTime),
@@ -382,9 +403,12 @@ const generateQuestionPaper = async (req, res) => {
         // Final shuffle to randomize all questions across subjects
         shuffleArray(allSelectedQuestions);
 
+        const accessCode = await generatePaperCode();
+
         const newPaper = await prisma.questionPaper.create({
             data: {
                 title: title,
+                accessCode,
                 createdById: parseInt(adminId),
                 durationHours: 3,
                 startTime: new Date(startTime),
@@ -1324,9 +1348,12 @@ const generateCustomExam = async (req, res) => {
 
         // Create the custom exam in the database
         // IMPORTANT: Do NOT shuffle selectedQuestions here - we want to preserve slot order!
+        const accessCode = await generatePaperCode();
+
         const newPaper = await prisma.questionPaper.create({
             data: {
                 title,
+                accessCode,
                 createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
                 durationHours: parseInt(durationHours) || 3,
                 startTime: startTime ? new Date(startTime) : new Date(),
