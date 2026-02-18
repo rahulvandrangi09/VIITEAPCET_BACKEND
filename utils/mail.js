@@ -24,6 +24,8 @@ transporter.verify(function (error, success) {
 });
 
 const sendMail = async (to, subject, htmlContent) => {
+    console.log("HOST:", process.env.MAIL_SMTP_HOST);
+    console.log("PORT:", process.env.MAIL_SMTP_PORT);
     try {
         const info = await transporter.sendMail({
             from: process.env.MAIL_SENDER_EMAIL,
