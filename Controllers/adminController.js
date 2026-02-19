@@ -18,7 +18,7 @@ const getFilePath = (imageKey, uploadedFiles) => {
     if (!imageKey) return null;
     const file = uploadedFiles.find(f => f.fieldname === imageKey);
     // Returns a path like: /uploads/1700000000000-image.png
-    return file ? path.join('/uploads', file.filename) : null; 
+    return file ? path.join('/uploads', file.filename) : null;
 };
 
 // Small helper to decode basic HTML entities back to characters/tags
@@ -77,7 +77,7 @@ const generateCustomQuestionPaper = async (req, res) => {
 
         // 3. Iterate through the distribution (MATHEMATICS, PHYSICS, etc.)
         for (const subjectKey in distribution) {
-            const difficulties = distribution[subjectKey]; 
+            const difficulties = distribution[subjectKey];
             subjectBreakdown[subjectKey] = { total: 0, topics: {} };
 
             for (const diffKey in difficulties) {
@@ -89,8 +89,8 @@ const generateCustomQuestionPaper = async (req, res) => {
                 const topicNames = Object.keys(topicsMap);
 
                 if (topicNames.length === 0) {
-                    return res.status(400).json({ 
-                        message: `No questions found for ${subjectKey} with difficulty ${diffKey}.` 
+                    return res.status(400).json({
+                        message: `No questions found for ${subjectKey} with difficulty ${diffKey}.`
                     });
                 }
 
@@ -116,11 +116,11 @@ const generateCustomQuestionPaper = async (req, res) => {
 
                     // Pick random questions from this topic
                     const selected = shuffleArray([...availableIds]).slice(0, countToTake);
-                    
+
                     selected.forEach(id => {
                         allSelectedQuestions.push({ id });
                         totalQuestionsCount++;
-                        
+
                         // Update breakdown for the response
                         if (!subjectBreakdown[subjectKey].topics[topicName]) {
                             subjectBreakdown[subjectKey].topics[topicName] = 0;
@@ -161,7 +161,7 @@ const generateCustomQuestionPaper = async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Internal server error.' });
     }
-}; 
+};
 
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -173,14 +173,14 @@ function shuffleArray(array) {
 
 const previewQuestionPaper = async (req, res) => {
     const { paperId } = req.params;
-    
+
     try {
         const paper = await prisma.questionPaper.findUnique({
             where: { id: parseInt(paperId) },
             include: {
                 paperQuestions: {
                     include: {
-                        question: true 
+                        question: true
                     }
                 }
             }
@@ -196,7 +196,7 @@ const previewQuestionPaper = async (req, res) => {
             .map(pq => {
                 const q = pq.question;
                 // Option image fields are stored as optionAImageUrl, optionBImageUrl, ...
-                const optionImageFields = ['optionAImageUrl','optionBImageUrl','optionCImageUrl','optionDImageUrl'];
+                const optionImageFields = ['optionAImageUrl', 'optionBImageUrl', 'optionCImageUrl', 'optionDImageUrl'];
 
                 // Build options with possible images
                 const options = (q.options || []).map((opt, idx) => {
@@ -243,7 +243,7 @@ const previewQuestionPaper = async (req, res) => {
                     questionImage
                 };
             })
-            .sort((a, b) => a.id - b.id); 
+            .sort((a, b) => a.id - b.id);
 
         res.status(200).json({
             title: paper.title,
@@ -259,7 +259,7 @@ const previewQuestionPaper = async (req, res) => {
 const saveQuestionsToDb = async (req, res) => {
     if (!req.body.questions) {
         if (req.files) {
-             req.files.forEach(file => fs.unlinkSync(file.path));
+            req.files.forEach(file => fs.unlinkSync(file.path));
         }
         return res.status(400).json({ message: "No questions payload found in request body. Upload failed." });
     }
@@ -270,14 +270,14 @@ const saveQuestionsToDb = async (req, res) => {
     try {
         const questionsPayload = JSON.parse(req.body.questions);
         for (const q of questionsPayload) {
-            const subject = q.subject; 
+            const subject = q.subject;
             const difficulty = q.difficulty;
             const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD];
             questionsToSave.push({
-                text: q.question, 
-                options: optionsArray, 
+                text: q.question,
+                options: optionsArray,
                 correctAnswer: q.answer, // e.g., "Option A"
-                uploadedById: DEFAULT_UPLOADER_ID, 
+                uploadedById: DEFAULT_UPLOADER_ID,
                 topic: q.topic,
                 subject: subject,
                 difficulty: difficulty,
@@ -292,7 +292,7 @@ const saveQuestionsToDb = async (req, res) => {
         if (questionsToSave.length === 0) {
             // Clean up files if no valid questions were parsed
             if (uploadedFiles.length > 0) {
-                 uploadedFiles.forEach(file => fs.unlinkSync(file.path));
+                uploadedFiles.forEach(file => fs.unlinkSync(file.path));
             }
             return res.status(400).json({ message: "No valid questions were processed to save." });
         }
@@ -323,27 +323,27 @@ const saveQuestionsToDb = async (req, res) => {
     }
 };
 
-const totalQuestions = async(req,res) => {
+const totalQuestions = async (req, res) => {
     try {
         const data = await prisma.Question.findMany();
         console.log(data);
-    } catch(error) {
+    } catch (error) {
         console.error(error);
     }
 }
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
-    const { adminId, title, startTime } = req.body;    
-    
+    const { adminId, title, startTime } = req.body;
+
     // Validate required fields
     if (!adminId || !title || !startTime) {
         return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
     }
 
     const DEFAULT_DISTRIBUTION = {
-        EASY: 0.30, 
-        MEDIUM: 0.40, 
+        EASY: 0.30,
+        MEDIUM: 0.40,
         HARD: 0.30
     };
 
@@ -360,20 +360,20 @@ const generateQuestionPaper = async (req, res) => {
             const subject = Subject[subjectKey];
             const targetCount = TARGET_QUESTIONS[subjectKey];
             let selectedSubjectQuestions = [];
-            
+
             // Iterate over difficulty levels
             const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
-            
+
             for (let i = 0; i < difficulties.length; i++) {
                 const diffKey = difficulties[i];
-                
+
                 let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
-                
+
                 // Adjustment for the last difficulty (HARD) to ensure total count is met
                 if (i === difficulties.length - 1) {
                     diffTargetCount = targetCount - selectedSubjectQuestions.length;
                 }
-                
+
                 if (diffTargetCount <= 0) continue;
 
                 const availableQuestions = await prisma.question.findMany({
@@ -397,7 +397,7 @@ const generateQuestionPaper = async (req, res) => {
         }
 
         if (allSelectedQuestions.length === 0) {
-             return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
+            return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
         }
 
         // Final shuffle to randomize all questions across subjects
@@ -449,7 +449,7 @@ const answerMap = {
 // --- NEW FUNCTION: Get Top 10 Students for a Paper ---
 const getTopStudents = async (req, res) => {
     const { paperId } = req.params;
-    
+
     if (!paperId) {
         return res.status(400).json({ message: 'Paper ID is required.' });
     }
@@ -496,7 +496,7 @@ const getTopStudents = async (req, res) => {
 // --- CORE ADMIN FUNCTION: Send Mass Results Mails with Optional Vouchers ---
 const sendResultsMails = async (req, res) => {
     const { paperId, vouchers } = req.body;
-    
+
     if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
 
     try {
@@ -505,8 +505,8 @@ const sendResultsMails = async (req, res) => {
             include: {
                 examAttempts: {
                     where: { isCompleted: true },
-                    include: { 
-                        student: true, 
+                    include: {
+                        student: true,
                         result: true // This contains the subject-wise analysisJson
                     },
                     orderBy: {
@@ -570,8 +570,8 @@ const sendResultsMails = async (req, res) => {
             }
         }
 
-        res.status(200).json({ 
-            message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.` 
+        res.status(200).json({
+            message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.`
         });
 
     } catch (error) {
@@ -583,8 +583,8 @@ const sendResultsMails = async (req, res) => {
 const uploadQuestions = async (req, res) => {
     const file = req.file;
     // Teacher ID, Subject, and Difficulty are expected in the multipart form data body
-    const { teacherId, subject, difficulty } = req.body; 
-    
+    const { teacherId, subject, difficulty } = req.body;
+
     if (!file || !teacherId || !subject || !difficulty) {
         // Clean up the temporary file if it exists and we have an error
         if (file) fs.unlinkSync(file.path);
@@ -627,8 +627,8 @@ const uploadQuestions = async (req, res) => {
                             text: data.text,
                             options: options,
                             correctAnswer: options[0],
-                            subject: Subject[subject.toUpperCase()], 
-                            difficulty: Difficulty[difficulty.toUpperCase()], 
+                            subject: Subject[subject.toUpperCase()],
+                            difficulty: Difficulty[difficulty.toUpperCase()],
                             uploadedById: parseInt(teacherId),
                         });
                         console.log(options[0]);
@@ -660,10 +660,10 @@ const uploadQuestions = async (req, res) => {
         });
 
         // 4. Send success response
-        res.status(201).json({ 
-            message: `Processed ${totalProcessed} rows. Successfully added ${result.count} questions to the database.`, 
+        res.status(201).json({
+            message: `Processed ${totalProcessed} rows. Successfully added ${result.count} questions to the database.`,
             totalProcessed: totalProcessed,
-            totalAdded: result.count 
+            totalAdded: result.count
         });
 
     } catch (error) {
@@ -708,12 +708,12 @@ const registerTeacher = async (req, res) => {
         const newTeacher = await prisma.user.create({
             data: {
                 fullName,
-                email:studentId,
+                email: studentId,
                 password: hashedPassword,
                 role: 'TEACHER',
             },
         });
-        
+
         /*
             Live monitoring.
             Reports 
@@ -749,11 +749,11 @@ const registerTeacher = async (req, res) => {
 // 🚨 NEW FUNCTION: Admin Password Change
 const changeAdminPassword = async (req, res) => {
     // 🚨 CRITICAL CHANGE: Get the user ID from the verified JWT token
-    const userId = req.user.id; 
-    
+    const userId = req.user.id;
+
     const { currentPassword, newPassword } = req.body;
     // We no longer need studentId from the body since the token identifies the user
-    
+
     if (!currentPassword || !newPassword) {
         return res.status(400).json({ message: 'Current and new password are required.' });
     }
@@ -768,10 +768,10 @@ const changeAdminPassword = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
-        
+
         // 2. Compare current password with stored hash
         const isMatch = await comparePassword(currentPassword, user.password);
-        
+
         if (!isMatch) {
             return res.status(401).json({ message: 'Incorrect current password.' });
         }
@@ -807,25 +807,27 @@ const getAdminStats = async (req, res) => {
 
         // Fetch only papers that are active AND whose 15-minute start window has not expired
         const upcomingExams = await prisma.questionPaper.findMany({
-            where: { 
-                isActive: true, 
+            where: {
+                isActive: true,
                 // 🚨 NEW FILTER: startTime must be greater than (Now - 15 minutes)
                 startTime: {
-                    gt: minStartTime, 
+                    gt: minStartTime,
                 },
-            }, 
-            select: { 
-                id: true, 
-                title: true, 
-                durationHours: true, 
+            },
+            select: {
+                id: true,
+                title: true,
+                durationHours: true,
                 totalMarks: true,
                 createdAt: true,
                 // 🚨 CRITICAL ADDITION
-                startTime: true, 
+                startTime: true,
+                // 🚨 NEW: Include accessCode for frontend display
+                accessCode: true,
             },
             // 🚨 NEW SORTING: Nearest upcoming first
             orderBy: {
-                startTime: 'asc', 
+                startTime: 'asc',
             }
         });
 
@@ -1003,7 +1005,7 @@ const getExamStats = async (req, res) => {
             name: r.student.fullName,
             score: r.score
         }));
-        console.log(ongoingExam,rankers,attemptingCount,totalStudents);
+        console.log(ongoingExam, rankers, attemptingCount, totalStudents);
         res.status(200).json({
             message: 'Exam is currently ongoing.',
             totalStudents,
@@ -1034,9 +1036,9 @@ const getReports = async (req, res) => {
                     }
                 },
                 _count: {
-                    select: { 
+                    select: {
                         examAttempts: true, // This gives total "attempted" count
-                        paperQuestions: true 
+                        paperQuestions: true
                     }
                 },
                 paperQuestions: {
@@ -1055,11 +1057,11 @@ const getReports = async (req, res) => {
             const completedAttempts = paper.examAttempts;
             const completedCount = completedAttempts.length;
             const attemptedCount = paper._count.examAttempts;
-            
+
             // Calculate average score
             const totalScore = completedAttempts.reduce((sum, a) => sum + (a.score || 0), 0);
             const avgScore = completedCount > 0 ? (totalScore / completedCount).toFixed(1) : "0";
-            
+
             // Subject Analytics
             const subjectStats = {
                 PHYSICS: { score: 0, count: 0, totalQuestions: 0 },
@@ -1145,7 +1147,7 @@ const getQuestionCounts = async (req, res) => {
             if (!topicCounts[subj]) topicCounts[subj] = {};
             topicCounts[subj][topic] = r._count._all;
         });
-        res.status(200).json({topicCounts });
+        res.status(200).json({ topicCounts });
     } catch (error) {
         console.error('getQuestionCounts Error:', error);
         res.status(500).json({ message: 'Internal server error while fetching question counts.' });
@@ -1197,9 +1199,9 @@ const getDifficultyStats = async (req, res) => {
         const parsedExamId = parseInt(examId);
 
         if (isNaN(parsedExamId)) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Invalid exam ID provided.' 
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid exam ID provided.'
             });
         }
 
@@ -1210,9 +1212,9 @@ const getDifficultyStats = async (req, res) => {
         });
 
         if (!exam) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Exam not found.' 
+            return res.status(404).json({
+                success: false,
+                message: 'Exam not found.'
             });
         }
 
@@ -1253,9 +1255,9 @@ const getDifficultyStats = async (req, res) => {
 
     } catch (error) {
         console.error('Get Difficulty Stats Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Internal server error while fetching difficulty stats.' 
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error while fetching difficulty stats.'
         });
     }
 };
@@ -1267,18 +1269,18 @@ const generateCustomExam = async (req, res) => {
     try {
         // Validate input
         if (!title || !slots || !Array.isArray(slots) || slots.length === 0) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Invalid request. Title and slots array are required.' 
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid request. Title and slots array are required.'
             });
         }
 
         // Validate each slot has a difficulty field
         for (const slot of slots) {
             if (!slot.difficulty || !['EASY', 'MEDIUM', 'HARD'].includes(slot.difficulty.toUpperCase())) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Invalid difficulty in slot. Must be EASY, MEDIUM, or HARD.` 
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid difficulty in slot. Must be EASY, MEDIUM, or HARD.`
                 });
             }
         }
@@ -1309,9 +1311,9 @@ const generateCustomExam = async (req, res) => {
             });
 
             if (questions.length < difficultyCount[difficulty]) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Insufficient questions for difficulty ${difficulty}. Needed: ${difficultyCount[difficulty]}, Available: ${questions.length}` 
+                return res.status(400).json({
+                    success: false,
+                    message: `Insufficient questions for difficulty ${difficulty}. Needed: ${difficultyCount[difficulty]}, Available: ${questions.length}`
                 });
             }
 
@@ -1327,13 +1329,13 @@ const generateCustomExam = async (req, res) => {
         slots.forEach((slot, index) => {
             const difficulty = slot.difficulty.toUpperCase();
             const pool = questionPools[difficulty];
-            
+
             // Pick the next unused question from this difficulty's shuffled pool
             let question = null;
             while (poolIndexes[difficulty] < pool.length) {
                 const candidate = pool[poolIndexes[difficulty]];
                 poolIndexes[difficulty]++;
-                
+
                 if (!usedQuestionIds.has(candidate.id)) {
                     question = candidate;
                     usedQuestionIds.add(candidate.id);
@@ -1375,9 +1377,9 @@ const generateCustomExam = async (req, res) => {
 
     } catch (error) {
         console.error('Generate Custom Exam Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Internal server error while generating custom exam.' 
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error while generating custom exam.'
         });
     }
 };
