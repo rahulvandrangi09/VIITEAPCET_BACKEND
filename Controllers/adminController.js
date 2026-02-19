@@ -323,6 +323,7 @@ const saveQuestionsToDb = async (req, res) => {
     }
 };
 
+
 const totalQuestions = async (req, res) => {
     try {
         const data = await prisma.Question.findMany();
