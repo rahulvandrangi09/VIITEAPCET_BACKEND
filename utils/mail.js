@@ -1,10 +1,15 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config(); 
 
+const _portRaw = process.env.MAIL_SMTP_PORT;
+const _port = _portRaw ? Number(_portRaw) : NaN;
+const port = Number.isFinite(_port) ? _port : 587; // default to 587 if not provided or invalid
+const secure = (process.env.MAIL_SMTP_SECURE === 'true') || port === 465;
+
 const transporter = nodemailer.createTransport({
     host: process.env.MAIL_SMTP_HOST,
-    port: Number(process.env.MAIL_SMTP_PORT),
-    secure: false, 
+    port,
+    secure,
     auth: {
         user: process.env.MAIL_SMTP_USER,
         pass: process.env.MAIL_SMTP_PASS,
@@ -12,12 +17,13 @@ const transporter = nodemailer.createTransport({
     tls: {
         rejectUnauthorized: false,
     },
-    family: 4 
+    family: 4,
+    logger: false
 });
 
 transporter.verify(function (error, success) {
     if (error) {
-        console.error("❌ Nodemailer config error:", error);
+        console.error("❌ Nodemailer config error:", error && error.stack ? error.stack : error);
     } else {
         console.log("✅ Nodemailer is ready to send emails!");
     }
@@ -38,7 +44,9 @@ const sendMail = async (to, subject, htmlContent) => {
         return true;
 
     } catch (error) {
-        console.error("❌ SMTP Error:", error.message);
+        console.error("❌ SMTP Error:", error && error.stack ? error.stack : error);
+        // provide more detail if nodemailer returned a response
+        if (error && error.response) console.error('SMTP response:', error.response);
         return false;
     }
 };
