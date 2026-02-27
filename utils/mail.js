@@ -1,32 +1,44 @@
-const nodemailer = require('nodemailer');
-require('dotenv').config(); 
+const nodemailer = require("nodemailer");
+const { google } = require("googleapis");
+require("dotenv").config();
 
-const transporter = nodemailer.createTransport({
-    host: process.env.MAIL_SMTP_HOST,
-    port: Number(process.env.MAIL_SMTP_PORT),
-    secure: false, 
-    auth: {
-        user: process.env.MAIL_SMTP_USER,
-        pass: process.env.MAIL_SMTP_PASS,
-    },
-    tls: {
-        rejectUnauthorized: false,
-    },
-    family: 4 
+const OAuth2 = google.auth.OAuth2;
+
+// ================= OAUTH2 SETUP =================
+
+const oauth2Client = new OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+);
+
+oauth2Client.setCredentials({
+    refresh_token: process.env.GMAIL_REFRESH_TOKEN,
 });
 
-transporter.verify(function (error, success) {
-    if (error) {
-        console.error("❌ Nodemailer config error:", error);
-    } else {
-        console.log("✅ Nodemailer is ready to send emails!");
-    }
-});
+// Create transporter dynamically (auto refresh token)
+const createTransporter = async () => {
+    const accessToken = await oauth2Client.getAccessToken();
+
+    return nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+            type: "OAuth2",
+            user: process.env.MAIL_SENDER_EMAIL,
+            clientId: process.env.GMAIL_CLIENT_ID,
+            clientSecret: process.env.GMAIL_CLIENT_SECRET,
+            refreshToken: process.env.GMAIL_REFRESH_TOKEN,
+            accessToken: accessToken.token,
+        },
+    });
+};
+
+// ================= SEND MAIL FUNCTION =================
 
 const sendMail = async (to, subject, htmlContent) => {
-    console.log("HOST:", process.env.MAIL_SMTP_HOST);
-    console.log("PORT:", process.env.MAIL_SMTP_PORT);
     try {
+        const transporter = await createTransporter();
+
         const info = await transporter.sendMail({
             from: process.env.MAIL_SENDER_EMAIL,
             to,
@@ -38,11 +50,12 @@ const sendMail = async (to, subject, htmlContent) => {
         return true;
 
     } catch (error) {
-        console.error("❌ SMTP Error:", error.message);
+        console.error("❌ Gmail API Error:", error);
         return false;
     }
 };
 
+// ================= TEMPLATE FUNCTIONS (UNCHANGED) =================
 
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
     return `
@@ -170,10 +183,9 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
     `;
 };
 
-
 module.exports = {
     sendMail,
     createRegistrationMail,
     createResultMail,
-    createResultMailWithVoucher 
+    createResultMailWithVoucher
 };
