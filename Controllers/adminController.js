@@ -143,7 +143,7 @@ const generateCustomQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: parseInt(durationHours) || 3,
-                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : null,
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : null,
                 totalMarks: totalQuestionsCount,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({ questionId: q.id }))
@@ -413,7 +413,7 @@ const generateQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: 3,
-                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : null,
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : null,
                 totalMarks: 160,
                 isActive: true,
                 paperQuestions: {
@@ -1367,7 +1367,7 @@ const generateCustomExam = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
                 durationHours: parseInt(durationHours) || 3,
-                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : new Date(Date.now() + IST_OFFSET_MS),
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : new Date(Date.now() + IST_OFFSET_MS),
                 totalMarks: selectedQuestions.length,
                 isActive: false, // Set to false by default for custom exams
                 paperQuestions: {
