@@ -1,4 +1,3 @@
-const nodemailer = require("nodemailer");
 const { google } = require("googleapis");
 require("dotenv").config();
 
@@ -16,20 +15,18 @@ oauth2Client.setCredentials({
     refresh_token: process.env.GMAIL_REFRESH_TOKEN,
 });
 
-// Create transporter dynamically (auto refresh token)
-const createTransporter = async () => {
+// ================= CREATE GMAIL CLIENT =================
+
+const createGmailClient = async () => {
     const accessToken = await oauth2Client.getAccessToken();
 
-    return nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-            type: "OAuth2",
-            user: process.env.MAIL_SENDER_EMAIL,
-            clientId: process.env.GMAIL_CLIENT_ID,
-            clientSecret: process.env.GMAIL_CLIENT_SECRET,
-            refreshToken: process.env.GMAIL_REFRESH_TOKEN,
-            accessToken: accessToken.token,
-        },
+    oauth2Client.setCredentials({
+        access_token: accessToken.token,
+    });
+
+    return google.gmail({
+        version: "v1",
+        auth: oauth2Client,
     });
 };
 
@@ -37,20 +34,39 @@ const createTransporter = async () => {
 
 const sendMail = async (to, subject, htmlContent) => {
     try {
-        const transporter = await createTransporter();
+        const gmail = await createGmailClient();
 
-        const info = await transporter.sendMail({
-            from: process.env.MAIL_SENDER_EMAIL,
-            to,
-            subject,
-            html: htmlContent,
+        const message = [
+            `From: ${process.env.MAIL_SENDER_EMAIL}`,
+            `To: ${to}`,
+            `Subject: ${subject}`,
+            "MIME-Version: 1.0",
+            "Content-Type: text/html; charset=utf-8",
+            "",
+            htmlContent,
+        ].join("\n");
+
+        const encodedMessage = Buffer.from(message)
+            .toString("base64")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+
+        const response = await gmail.users.messages.send({
+            userId: "me",
+            requestBody: {
+                raw: encodedMessage,
+            },
         });
 
-        console.log("✅ Email sent:", info.messageId);
+        console.log("✅ Email sent:", response.data.id);
         return true;
 
     } catch (error) {
-        console.error("❌ Gmail API Error:", error);
+        console.error(
+            "❌ Gmail REST API Error:",
+            error.response?.data || error.message
+        );
         return false;
     }
 };
@@ -60,7 +76,7 @@ const sendMail = async (to, subject, htmlContent) => {
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
     return `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
-            <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIIT Mock Portal Registration Successful!</h2>
+            <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIITCET Portal Registration Successful!</h2>
             <p>Dear ${fullName},</p>
             <p>Congratulations! Your registration is successful. You can now log in to the student dashboard.</p>
             
@@ -133,7 +149,7 @@ const createResultMailWithVoucher = (fullName, totalScore, totalMarks, analysis,
                 <p style="font-size: 12px; color: #666;">Use this code to redeem your Amazon voucher!</p>
             </div>
             
-            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIIT Mock Portal</p>
+            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIITCET Portal</p>
         </div>
     `;
 };
@@ -178,7 +194,7 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
 
             ${feedbackBox}
             
-            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIIT Mock Portal</p>
+            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIITCET Portal</p>
         </div>
     `;
 };
