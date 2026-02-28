@@ -32,7 +32,7 @@ const sanitizeQuestion = (question) => {
 const getAvailableExams = async (req, res) => {
     
     try {
-        const now = new Date(Date.now());
+        const now = new Date();
         // Calculate the maximum end time for the start window that is still valid.
         // A paper must end its 15-minute grace period AFTER the current time.
         // Paper.startTime + 15 mins > Now
