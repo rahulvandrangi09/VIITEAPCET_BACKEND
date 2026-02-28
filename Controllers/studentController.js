@@ -36,8 +36,7 @@ const getAvailableExams = async (req, res) => {
         // Calculate the maximum end time for the start window that is still valid.
         // A paper must end its 15-minute grace period AFTER the current time.
         // Paper.startTime + 15 mins > Now
-        const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS);
-
+        const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS - IST_OFFSET_MS);
         console.log("now: ",now, "minStartTime: ",minStartTime);
 
         // Fetch only papers that are active AND whose 15-minute start window has not expired
