@@ -856,8 +856,6 @@ const getExamStats = async (req, res) => {
         const totalStudents = await prisma.student.count();
 
         const now = new Date();
-
-        // Find ongoing exam: active, now >= startTime, now <= startTime + durationHours
         const ongoingExam = await prisma.questionPaper.findFirst({
             where: {
                 isActive: true,
@@ -898,7 +896,6 @@ const getExamStats = async (req, res) => {
             });
 
             if (previousExam) {
-                // Get top rankers for the previous exam
                 const topRankers = await prisma.examAttempt.findMany({
                     where: {
                         paperId: previousExam.id,
@@ -944,6 +941,7 @@ const getExamStats = async (req, res) => {
 
         if (now > examEndTime) {
             // Exam ended, fetch top rankers for the completed exam
+            console.log("now : ",now, "examEndTime: ", examEndTime);
             const topRankers = await prisma.examAttempt.findMany({
                 where: {
                     paperId: ongoingExam.id,
@@ -966,6 +964,7 @@ const getExamStats = async (req, res) => {
                 name: r.student.fullName,
                 score: r.score
             }));
+
 
             return res.status(200).json({
                 message: 'Exam has ended. Showing final results.',
