@@ -7,6 +7,7 @@ const fs = require('fs');
 const csv = require('csv-parser');
 const { hashPassword, comparePassword } = require('./authController');
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;
+const { IST_OFFSET_MS } = require('../utils/ist');
 
 
 
@@ -142,7 +143,7 @@ const generateCustomQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: parseInt(durationHours) || 3,
-                startTime: new Date(startTime),
+                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : null,
                 totalMarks: totalQuestionsCount,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({ questionId: q.id }))
@@ -412,7 +413,7 @@ const generateQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: 3,
-                startTime: new Date(startTime),
+                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : null,
                 totalMarks: 160,
                 isActive: true,
                 paperQuestions: {
@@ -795,13 +796,13 @@ const changeAdminPassword = async (req, res) => {
 
 // --- NEW ADMIN FUNCTION: Get Admin Stats ---
 const getAdminStats = async (req, res) => {
-    const myDate = new Date();
+    const myDate = new Date(Date.now() + IST_OFFSET_MS);
     console.log(myDate);
     try {
         // Total number of students
         const totalStudents = await prisma.student.count();
 
-        const now = new Date();
+        const now = new Date(Date.now() + IST_OFFSET_MS);
         // Calculate the maximum end time for the start window that is still valid.
         // A paper must end its 15-minute grace period AFTER the current time.
         // Paper.startTime + 15 mins > Now
@@ -857,7 +858,10 @@ const getExamStats = async (req, res) => {
     try {
         const totalStudents = await prisma.student.count();
 
-        const now = new Date();
+        const now = new Date(Date.now() + IST_OFFSET_MS);
+        
+        console.log("now time: ", now);
+
         const ongoingExam = await prisma.questionPaper.findFirst({
             where: {
                 isActive: true,
@@ -876,7 +880,10 @@ const getExamStats = async (req, res) => {
                 totalMarks: true
             }
         });
-
+        // Adjust stored UTC startTime to IST (+05:30)
+        if (ongoingExam && ongoingExam.startTime) {
+            ongoingExam.startTime = new Date(new Date(ongoingExam.startTime).getTime() + IST_OFFSET_MS);
+        }
         if (!ongoingExam) {
             // Find the most recent exam that has been attempted
             const previousExam = await prisma.questionPaper.findFirst({
@@ -1360,7 +1367,7 @@ const generateCustomExam = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
                 durationHours: parseInt(durationHours) || 3,
-                startTime: startTime ? new Date(startTime) : new Date(),
+                startTime: startTime ? new Date(new Date(startTime).getTime() + IST_OFFSET_MS) : new Date(Date.now() + IST_OFFSET_MS),
                 totalMarks: selectedQuestions.length,
                 isActive: false, // Set to false by default for custom exams
                 paperQuestions: {
