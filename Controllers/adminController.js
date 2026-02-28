@@ -796,13 +796,13 @@ const changeAdminPassword = async (req, res) => {
 
 // --- NEW ADMIN FUNCTION: Get Admin Stats ---
 const getAdminStats = async (req, res) => {
-    const myDate = new Date(Date.now() + IST_OFFSET_MS);
+    const myDate = new Date(Date.now());
     console.log(myDate);
     try {
         // Total number of students
         const totalStudents = await prisma.student.count();
 
-        const now = new Date(Date.now() + IST_OFFSET_MS);
+        const now = new Date(Date.now());
         // Calculate the maximum end time for the start window that is still valid.
         // A paper must end its 15-minute grace period AFTER the current time.
         // Paper.startTime + 15 mins > Now
@@ -1367,7 +1367,7 @@ const generateCustomExam = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
                 durationHours: parseInt(durationHours) || 3,
-                startTime: startTime ? new Date(new Date(startTime).getTime()) : new Date(Date.now() + IST_OFFSET_MS),
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : new Date(Date.now()),
                 totalMarks: selectedQuestions.length,
                 isActive: false, // Set to false by default for custom exams
                 paperQuestions: {
