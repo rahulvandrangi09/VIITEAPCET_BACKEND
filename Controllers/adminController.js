@@ -858,7 +858,7 @@ const getExamStats = async (req, res) => {
     try {
         const totalStudents = await prisma.student.count();
 
-        const now = new Date(Date.now() + IST_OFFSET_MS);
+        const now = new Date(Date.now());
         
         console.log("now time: ", now);
 
