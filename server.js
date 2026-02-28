@@ -18,6 +18,30 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+/*test gmail 
+
+const { sendMail } = require("./utils/mail");
+
+app.get("/test-mail", async (req, res) => {
+  try {
+    await sendMail(
+      "yashashchandrasrinivas2006@gmail.com",   // change this
+      "Test Mail",
+      "<h1>OAuth Working 🚀</h1>"
+    );
+
+    res.send("Mail Sent Successfully");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Mail Failed");
+  }
+});*/
+
+
+
+
+
+
 // --- Multer Configuration ---
 // Destination storage for uploaded CSV files
 const storage = multer.diskStorage({

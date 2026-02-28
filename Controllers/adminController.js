@@ -795,6 +795,8 @@ const changeAdminPassword = async (req, res) => {
 
 // --- NEW ADMIN FUNCTION: Get Admin Stats ---
 const getAdminStats = async (req, res) => {
+    const myDate = new Date();
+    console.log(myDate);
     try {
         // Total number of students
         const totalStudents = await prisma.student.count();
