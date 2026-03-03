@@ -81,6 +81,7 @@ model QuestionPaper {
   durationHours  Int             @default(3)
   totalMarks     Int             @default(160)
   isActive       Boolean         @default(true)
+  mailSent       Boolean         @default(false)
   createdById    Int
   createdAt      DateTime        @default(now())
   startTime      DateTime?
