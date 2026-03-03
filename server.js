@@ -18,29 +18,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/*test gmail 
-
-const { sendMail } = require("./utils/mail");
-
-app.get("/test-mail", async (req, res) => {
-  try {
-    await sendMail(
-      "yashashchandrasrinivas2006@gmail.com",   // change this
-      "Test Mail",
-      "<h1>OAuth Working 🚀</h1>"
-    );
-
-    res.send("Mail Sent Successfully");
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Mail Failed");
-  }
-});*/
-
-
-
-
-
 
 // --- Multer Configuration ---
 // Destination storage for uploaded CSV files
@@ -100,6 +77,7 @@ app.post('/api/auth/register', upload.single('photo'), authController.registerSt
 app.post('/api/auth/login', authController.login);
 app.post('/api/auth/change-password', adminController.changeAdminPassword);
 app.post('/api/admin/register-teacher', protect, authorize('ADMIN'), adminController.registerTeacher);
+
 // --- ADMIN ROUTES ---
 app.post('/api/admin/create-paper', protect, authorize('ADMIN'), adminController.generateQuestionPaper);
 app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
