@@ -572,6 +572,12 @@ const sendResultsMails = async (req, res) => {
             }
         }
 
+        // Update paper to mark mailSent as true
+        await prisma.questionPaper.update({
+            where: { id: parseInt(paperId) },
+            data: { mailSent: true }
+        });
+
         res.status(200).json({
             message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.`
         });
@@ -1113,6 +1119,7 @@ const getReports = async (req, res) => {
                 startDate: paper.startTime,
                 totalMarks: paper.totalMarks,
                 status: paper.isActive ? 'Active' : 'Complete',
+                mailSent: paper.mailSent,
                 feedback: (completedCount > 0 ? (parseFloat(avgScore) / paper.totalMarks) * 10 : 0).toFixed(1),
                 registered: registeredForExam,
                 attempted: attemptedCount,
