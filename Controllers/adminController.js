@@ -60,7 +60,7 @@ const generateCustomQuestionPaper = async (req, res) => {
         const allQuestions = await prisma.question.findMany({
             select: { id: true, subject: true, difficulty: true, topic: true }
         });
-
+        console.log();
         // 2. Map questions: [Subject][Difficulty][Topic] -> [Array of IDs]
         const availabilityMap = {};
         allQuestions.forEach(q => {
@@ -71,7 +71,7 @@ const generateCustomQuestionPaper = async (req, res) => {
             }
             availabilityMap[q.subject][q.difficulty][q.topic].push(q.id);
         });
-
+        console.log(availabilityMap);
         let allSelectedQuestions = [];
         let totalQuestionsCount = 0;
         const subjectBreakdown = {};
@@ -96,26 +96,56 @@ const generateCustomQuestionPaper = async (req, res) => {
                 }
 
                 // --- BALANCING LOGIC ---
+                // First ensure total availability for this Subject+Difficulty
+                const totalAvailableForDiff = Object.values(topicsMap).reduce((s, arr) => s + arr.length, 0);
+                if (totalAvailableForDiff < targetCount) {
+                    return res.status(400).json({
+                        message: `Insufficient total questions for ${subjectKey} ${diffKey}. Needed: ${targetCount}, Available: ${totalAvailableForDiff}.`
+                    });
+                }
+
+                // Compute base allocation per topic, take all if a topic has less than base.
                 const numTopics = topicNames.length;
                 const basePerTopic = Math.floor(targetCount / numTopics);
-                let remainder = targetCount % numTopics;
+                let remainingNeeded = targetCount;
 
-                // Shuffle topics so the "extra" questions from the remainder aren't always given to the same topics
-                const shuffledTopicNames = shuffleArray([...topicNames]);
+                const perTopicTake = {};
+                // Initial allocation: give each topic up to basePerTopic (or all available if fewer)
+                for (const topicName of topicNames) {
+                    const availableIds = topicsMap[topicName] || [];
+                    const alloc = Math.min(basePerTopic, availableIds.length);
+                    perTopicTake[topicName] = alloc;
+                    remainingNeeded -= alloc;
+                }
 
-                for (const topicName of shuffledTopicNames) {
-                    let countToTake = basePerTopic + (remainder > 0 ? 1 : 0);
-                    if (remainder > 0) remainder--;
+                // If we still need more, distribute remainingNeeded from topics that have spare capacity
+                if (remainingNeeded > 0) {
+                    // Sort topics by spare capacity descending so larger pools contribute first
+                    const topicsBySpare = [...topicNames].sort((a, b) => (topicsMap[b].length - perTopicTake[b]) - (topicsMap[a].length - perTopicTake[a]));
+
+                    for (const topicName of topicsBySpare) {
+                        if (remainingNeeded <= 0) break;
+                        const spare = topicsMap[topicName].length - perTopicTake[topicName];
+                        if (spare <= 0) continue;
+                        const take = Math.min(spare, remainingNeeded);
+                        perTopicTake[topicName] += take;
+                        remainingNeeded -= take;
+                    }
+                }
+
+                // At this point remainingNeeded should be zero because we checked total availability earlier
+                if (remainingNeeded > 0) {
+                    return res.status(400).json({
+                        message: `Unable to allocate ${targetCount} questions for ${subjectKey} ${diffKey} after redistribution.`
+                    });
+                }
+
+                // Now pick the allocated number of questions from each topic
+                for (const topicName of shuffleArray([...topicNames])) {
+                    const countToTake = perTopicTake[topicName] || 0;
+                    if (countToTake === 0) continue;
 
                     const availableIds = topicsMap[topicName];
-
-                    if (availableIds.length < countToTake) {
-                        return res.status(400).json({
-                            message: `Insufficient questions in "${topicName}" (${subjectKey} ${diffKey}). Needed: ${countToTake}, Available: ${availableIds.length}.`
-                        });
-                    }
-
-                    // Pick random questions from this topic
                     const selected = shuffleArray([...availableIds]).slice(0, countToTake);
 
                     selected.forEach(id => {
@@ -163,7 +193,6 @@ const generateCustomQuestionPaper = async (req, res) => {
         res.status(500).json({ message: 'Internal server error.' });
     }
 };
-
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
