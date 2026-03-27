@@ -300,22 +300,29 @@ const saveQuestionsToDb = async (req, res) => {
     try {
         const questionsPayload = JSON.parse(req.body.questions);
         for (const q of questionsPayload) {
-            const subject = q.subject;
-            const difficulty = q.difficulty;
-            const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD];
+            // Trim incoming string fields to remove leading/trailing whitespace
+            const subject = typeof q.subject === 'string' ? q.subject.trim() : q.subject;
+            const difficulty = typeof q.difficulty === 'string' ? q.difficulty.trim() : q.difficulty;
+            const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD]
+                .map(o => (typeof o === 'string' ? o.trim() : o))
+                .filter(o => o !== undefined && o !== null && String(o) !== '');
+            const text = typeof q.question === 'string' ? q.question.trim() : q.question;
+            const correctAnswer = typeof q.answer === 'string' ? q.answer.trim() : q.answer;
+            const topic = typeof q.topic === 'string' ? q.topic.trim() : q.topic;
+
             questionsToSave.push({
-                text: q.question,
+                text: text,
                 options: optionsArray,
-                correctAnswer: q.answer, // e.g., "Option A"
+                correctAnswer: correctAnswer, // e.g., "Option A"
                 uploadedById: DEFAULT_UPLOADER_ID,
-                topic: q.topic,
+                topic: topic,
                 subject: subject,
                 difficulty: difficulty,
-                questionImageUrl: getFilePath(q.questionImageKey, uploadedFiles),
-                optionAImageUrl: getFilePath(q.optionAImageKey, uploadedFiles),
-                optionBImageUrl: getFilePath(q.optionBImageKey, uploadedFiles),
-                optionCImageUrl: getFilePath(q.optionCImageKey, uploadedFiles),
-                optionDImageUrl: getFilePath(q.optionDImageKey, uploadedFiles),
+                questionImageUrl: getFilePath(q.questionImageKey && q.questionImageKey.trim ? q.questionImageKey.trim() : q.questionImageKey, uploadedFiles),
+                optionAImageUrl: getFilePath(q.optionAImageKey && q.optionAImageKey.trim ? q.optionAImageKey.trim() : q.optionAImageKey, uploadedFiles),
+                optionBImageUrl: getFilePath(q.optionBImageKey && q.optionBImageKey.trim ? q.optionBImageKey.trim() : q.optionBImageKey, uploadedFiles),
+                optionCImageUrl: getFilePath(q.optionCImageKey && q.optionCImageKey.trim ? q.optionCImageKey.trim() : q.optionCImageKey, uploadedFiles),
+                optionDImageUrl: getFilePath(q.optionDImageKey && q.optionDImageKey.trim ? q.optionDImageKey.trim() : q.optionDImageKey, uploadedFiles),
             });
         }
 
@@ -620,7 +627,11 @@ const sendResultsMails = async (req, res) => {
 const uploadQuestions = async (req, res) => {
     const file = req.file;
     // Teacher ID, Subject, and Difficulty are expected in the multipart form data body
-    const { teacherId, subject, difficulty } = req.body;
+    let { teacherId, subject, difficulty } = req.body;
+    // Trim basic form fields
+    teacherId = teacherId && teacherId.toString().trim();
+    subject = subject && subject.toString().trim();
+    difficulty = difficulty && difficulty.toString().trim();
 
     if (!file || !teacherId || !subject || !difficulty) {
         // Clean up the temporary file if it exists and we have an error
@@ -659,11 +670,14 @@ const uploadQuestions = async (req, res) => {
                 if (data.text && Subject[subject.toUpperCase()] && Difficulty[difficulty.toUpperCase()]) {
                     try {
                         const options = [data.optionA, data.optionB, data.optionC, data.optionD]
-                            .filter(o => o && o.trim() !== ''); // Filter out empty options
+                            .map(o => (typeof o === 'string' ? o.trim() : o))
+                            .filter(o => o && o !== ''); // Filter out empty options
+                        const text = typeof data.text === 'string' ? data.text.trim() : data.text;
+                        const correctAnswer = (typeof data.correctAnswer === 'string' ? data.correctAnswer.trim() : (options[0] || ''));
                         questionsToCreate.push({
-                            text: data.text,
+                            text: text,
                             options: options,
-                            correctAnswer: options[0],
+                            correctAnswer: correctAnswer,
                             subject: Subject[subject.toUpperCase()],
                             difficulty: Difficulty[difficulty.toUpperCase()],
                             uploadedById: parseInt(teacherId),
