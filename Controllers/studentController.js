@@ -98,6 +98,19 @@ const startExam = async (req, res) => {
             return res.status(404).json({ message: 'Student not found.' });
         }
 
+        // Check if the student has already completed this exam
+        const completedAttempt = await prisma.examAttempt.findFirst({
+            where: {
+                studentId: parsedStudentId,
+                paperId: parsedPaperId,
+                isCompleted: true
+            }
+        });
+
+        if (completedAttempt) {
+            return res.status(403).json({ message: 'You have already completed this exam and cannot attempt it again.' });
+        }
+
         // Update student's isAttemptingExam to true
         await prisma.student.update({
             where: { id: parsedStudentId },
