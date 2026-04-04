@@ -5,6 +5,7 @@ const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
 const csv = require('csv-parser');
+const ExcelJS = require('exceljs');
 const { hashPassword, comparePassword } = require('./authController');
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;
 const { IST_OFFSET_MS } = require('../utils/ist');
@@ -848,13 +849,11 @@ const getAdminStats = async (req, res) => {
     const myDate = new Date(Date.now());
     console.log(myDate);
     try {
-        // Total number of students
+        
         const totalStudents = await prisma.student.count();
 
         const now = new Date(Date.now());
-        // Calculate the maximum end time for the start window that is still valid.
-        // A paper must end its 15-minute grace period AFTER the current time.
-        // Paper.startTime + 15 mins > Now
+        
         const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS);
 
 
@@ -908,9 +907,7 @@ const getExamStats = async (req, res) => {
         const totalStudents = await prisma.student.count();
 
         const now = new Date(Date.now());
-        
-        console.log("now time: ", now);
-
+    
         const ongoingExam = await prisma.questionPaper.findFirst({
             where: {
                 isActive: true,
@@ -938,7 +935,7 @@ const getExamStats = async (req, res) => {
             const previousExam = await prisma.questionPaper.findFirst({
                 where: {
                     examAttempts: {
-                        some: {} // has at least one attempt
+                        some: {} 
                     }
                 },
                 orderBy: {
@@ -1039,6 +1036,8 @@ const getExamStats = async (req, res) => {
                 isAttemptingExam: true
             }
         });
+
+        console.log(attemptingCount);
 
         // Top 5 rankers: from ExamAttempt where paperId=ongoingExam.id, isCompleted=true, order by score desc, limit 5, include student.fullName
         const topRankers = await prisma.examAttempt.findMany({
@@ -1245,6 +1244,91 @@ const getDifficultyAvailability = async (req, res) => {
     } catch (error) {
         console.error('getDifficultyAvailability Error:', error);
         res.status(500).json({ success: false, message: 'Internal server error while fetching difficulty availability.' });
+    }
+};
+
+// --- NEW: Export paper results as Excel ---
+const exportResultsExcel = async (req, res) => {
+    const { paperId } = req.params;
+    if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
+
+    try {
+        const paper = await prisma.questionPaper.findUnique({
+            where: { id: parseInt(paperId) },
+            include: {
+                examAttempts: {
+                    where: { isCompleted: true },
+                    include: {
+                        student: {
+                            select: { fullName: true, email: true, mobileNumber: true }
+                        },
+                        result: true
+                    },
+                    orderBy: { score: 'desc' }
+                }
+            }
+        });
+
+        if (!paper || !paper.examAttempts || paper.examAttempts.length === 0) {
+            return res.status(404).json({ message: 'No completed attempts found for this paper.' });
+        }
+
+        // Create workbook and worksheet
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Results');
+
+        // Define header row
+        const headers = [
+            { header: 'Rank', key: 'rank', width: 6 },
+            { header: 'Name', key: 'name', width: 30 },
+            { header: 'Phone', key: 'phone', width: 15 },
+            { header: 'Email', key: 'email', width: 30 },
+            { header: 'PHYSICS', key: 'physics', width: 12 },
+            { header: 'CHEMISTRY', key: 'chemistry', width: 12 },
+            { header: 'MATHEMATICS', key: 'mathematics', width: 12 },
+            { header: 'Total Score', key: 'total', width: 12 }
+        ];
+
+        worksheet.columns = headers;
+
+        // Fill rows
+        const attempts = paper.examAttempts.sort((a, b) => (b.score || 0) - (a.score || 0));
+        for (let i = 0; i < attempts.length; i++) {
+            const attempt = attempts[i];
+            const student = attempt.student || {};
+            const analysis = attempt.result?.analysisJson || {};
+
+            const getSubScore = (sub) => {
+                // support both uppercase and lowercase keys
+                const entry = analysis[sub] || analysis[sub.toLowerCase()] || {};
+                return entry.score != null ? entry.score : 0;
+            };
+
+            worksheet.addRow({
+                rank: i + 1,
+                name: student.fullName || '',
+                phone: student.mobileNumber || '',
+                email: student.email || '',
+                physics: getSubScore('PHYSICS'),
+                chemistry: getSubScore('CHEMISTRY'),
+                mathematics: getSubScore('MATHEMATICS'),
+                total: attempt.score || (attempt.result?.totalScore || 0)
+            });
+        }
+
+        // Style header row
+        worksheet.getRow(1).font = { bold: true };
+
+        // Set response headers and stream workbook
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=results_${paperId}.xlsx`);
+
+        await workbook.xlsx.write(res);
+        res.end();
+
+    } catch (error) {
+        console.error('Export Results Excel Error:', error);
+        res.status(500).json({ message: 'Failed to export results.' });
     }
 };
 
@@ -1457,6 +1541,7 @@ module.exports = {
     getExamStats,
     getReports,
     getTopStudents,
+    exportResultsExcel,
     totalQuestions,
     getDifficultyStats,
     generateCustomExam,

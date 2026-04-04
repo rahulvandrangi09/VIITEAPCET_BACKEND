@@ -87,6 +87,7 @@ app.get('/api/admin/top-students/:paperId', protect, authorize('ADMIN'), adminCo
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
 app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);
+app.get('/api/admin/reports/:paperId/results', protect, authorize('ADMIN', 'TEACHER'), adminController.exportResultsExcel);
 app.get('/api/admin/total-questions', protect, authorize('ADMIN','TEACHER'), adminController.getQuestionCounts);
 app.get('/api/admin/difficulty-availability', protect, authorize('ADMIN','TEACHER'), adminController.getDifficultyAvailability);
 
