@@ -49,34 +49,35 @@ const registerStudent = async (req, res) => {
     motherName,
     dob,
     gender,
+    password,
     email,
     mobile: mobileNumber,
     altMobile: alternativeMobileNumber,
-    stream,
-    qualifyingExam,
-    yearOfPassing,
-    medium,
-    placeOfStudy,
-    category,
-    minorityStatus,
-    address,
-    city,
-    state,
-    pincode,
-    marks,
-    collegeName,
-    collegeAddress,
+    // stream,
+    // qualifyingExam,
+    // yearOfPassing,
+    // medium,
+    // placeOfStudy,
+    // category,
+    // minorityStatus,
+    // address,
+    // city,
+    // state,
+    // pincode,
+    // marks,
+    // collegeName,
+    // collegeAddress,
     } = req.body;
     
     // --- FIX: Capture the photo path from req.file.path (Multer result) ---
     // This path is local, e.g., 'uploads/1700000000000-photo.jpg'
-    const photoPath = req.file?.path; 
+    // const photoPath = req.file?.path; 
     
     if (!email || !fullName) {
         return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    const rawPassword = generatePassword();
+    const rawPassword = password;
     const hashedPassword = await bcrypt.hash(rawPassword, SALT_ROUNDS);
     const studentId = generateStudentId();
 
@@ -92,22 +93,22 @@ const registerStudent = async (req, res) => {
                 mobileNumber,
                 alternativeMobileNumber,
                 email,
-                stream,
-                qualifyingExam,
-                yearOfPassing: parseInt(yearOfPassing),
-                medium,
-                placeOfStudy,
-                category,
-                minorityStatus,
-                address,
-                city,
-                state,
-                pincode,
-                marks,
-                collegeName,
-                collegeAddress,
-                // --- FIX: Store the photo path in the DB ---
-                photo: photoPath, 
+                // stream,
+                // qualifyingExam,
+                // yearOfPassing: parseInt(yearOfPassing),
+                // medium,
+                // placeOfStudy,
+                // category,
+                // minorityStatus,
+                // address,
+                // city,
+                // state,
+                // pincode,
+                // marks,
+                // collegeName,
+                // collegeAddress,
+                // // --- FIX: Store the photo path in the DB ---
+                // photo: photoPath, 
                 dateOfBirth: new Date(dob),
             },
         });
@@ -135,15 +136,15 @@ const registerStudent = async (req, res) => {
     }
 };
 const login = async (req, res) => {
-    const { studentId, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!studentId || !password) {
+    if (!email || !password) {
         return res.status(400).json({ message: 'Login ID and password are required.' });
     }
 
     try {
         const student = await prisma.student.findUnique({
-            where: { studentId: studentId },
+            where: { email : email  },
         });
 
         let userToAuthenticate;
@@ -156,7 +157,7 @@ const login = async (req, res) => {
         } else {
             // --- 2. Check if it's a Admin/Teacher login (using email as ID) ---
             const user = await prisma.user.findUnique({
-                where: { email: studentId }, 
+                where: { email: email }, 
             });
 
             if (user) {
@@ -175,13 +176,18 @@ const login = async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials. Password incorrect.' });
         }
 
+        const accessToken = generateAccessToken(userToAuthenticate.id);
+        const refreshToken = generateRefreshToken(userToAuthenticate.id);
+
         // --- 5. SUCCESS RESPONSE (Ensure all fields are present!) ---
         res.status(200).json({ 
             message: 'Login successful.', 
+            accessToken,
+            refreshToken,
             user: { 
                 id: userToAuthenticate.id, 
                 // Use the input ID for identifier
-                identifier: studentId, 
+                identifier: email, 
                 fullName: userToAuthenticate.fullName, 
                 role: role // <-- This must be defined and sent!
             } 

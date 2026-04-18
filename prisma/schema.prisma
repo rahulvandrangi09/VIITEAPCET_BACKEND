@@ -22,7 +22,7 @@ model User {
 
 model Student {
   id                      Int            @id @default(autoincrement())
-  studentId               String?        @unique
+//  studentId               String?        @unique
   password                String
   fullName                String
   fatherName              String
@@ -32,21 +32,21 @@ model Student {
   email                   String         @unique
   mobileNumber            String
   alternativeMobileNumber String?
-  stream                  Stream
-  qualifyingExam          QualifyingExam
-  yearOfPassing           Int
-  medium                  String?
-  placeOfStudy            String?
-  marks                   String?
-  collegeName             String?
-  collegeAddress          String?
-  category                Category
-  minorityStatus          String
-  address                 String
-  city                    String
-  state                   String
-  pincode                 String
-  photo                   String?
+//  stream                  Stream
+//  qualifyingExam          QualifyingExam
+//  yearOfPassing           Int
+//  medium                  String?
+//  placeOfStudy            String?
+//  marks                   String?
+//  collegeName             String?
+//  collegeAddress          String?
+//  category                Category
+//  minorityStatus          String
+//  address                 String
+//  city                    String
+//  state                   String
+//  pincode                 String
+//  photo                   String?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   refreshToken            String?

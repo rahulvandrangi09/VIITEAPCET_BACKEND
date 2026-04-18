@@ -51,33 +51,34 @@ const registerStudent = async (req, res) => {
     motherName,
     dob,
     gender,
+    password,
     email,
     mobile: mobileNumber,
     altMobile: alternativeMobileNumber,
-    stream,
-    qualifyingExam,
-    yearOfPassing,
-    medium,
-    placeOfStudy,
-    category,
-    minorityStatus,
-    address,
-    city,
-    state,
-    pincode,
-    marks,
-    collegeName,
-    collegeAddress,
+    // stream,
+    // qualifyingExam,
+    // yearOfPassing,
+    // medium,
+    // placeOfStudy,
+    // category,
+    // minorityStatus,
+    // address,
+    // city,
+    // state,
+    // pincode,
+    // marks,
+    // collegeName,
+    // collegeAddress,
     } = req.body;
-    const photo = req.file?.path; 
+    // const photo = req.file?.path; 
     
     if (!email || !fullName) {
         return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    const rawPassword = generatePassword();
+    const rawPassword = password;
     const hashedPassword = await bcrypt.hash(rawPassword, SALT_ROUNDS);
-    const studentId = generateStudentId();
+    const studentId = email;
 
     try {
         const newStudent = await prisma.student.create({
@@ -91,21 +92,21 @@ const registerStudent = async (req, res) => {
                 mobileNumber,
                 alternativeMobileNumber,
                 email,
-                stream,
-                qualifyingExam,
-                yearOfPassing: parseInt(yearOfPassing),
-                medium,
-                placeOfStudy,
-                category,
-                minorityStatus,
-                address,
-                city,
-                state,
-                pincode,
-                marks,
-                collegeName,
-                collegeAddress,
-                photo:null,
+                // stream,
+                // qualifyingExam,
+                // yearOfPassing: parseInt(yearOfPassing),
+                // medium,
+                // placeOfStudy,
+                // category,
+                // minorityStatus,
+                // address,
+                // city,
+                // state,
+                // pincode,
+                // marks,
+                // collegeName,
+                // collegeAddress,
+                // photo:null,
                 dateOfBirth: new Date(dob),
             },
         });
@@ -136,66 +137,62 @@ const registerStudent = async (req, res) => {
  * Handles the login for all user types (Student, Teacher, Admin).
  */
 const login = async (req, res) => {
-    // Accept either an email or a studentId/unique id as `username` in the request body
-    const { username, password } = req.body;
+    // 1. Explicitly destructure email and password
+    const { email, password } = req.body;
 
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Username and password are required.' });
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required.' });
     }
 
     try {
         let user = null;
+        let role = 'STUDENT'; // Default role assumption
 
-        // If input looks like an email, try User -> Student by email
-        if (typeof username === 'string' && username.includes('@')) {
-            user = await prisma.user.findUnique({ where: { email: username } });
-            if (!user) {
-                user = await prisma.student.findUnique({ where: { email: username } });
-                if (user) user.role = 'STUDENT';
-            }
-        } else {
-            // Try Student by studentId first (common case)
-            user = await prisma.student.findUnique({ where: { studentId: username } });
-            if (user) {
-                user.role = 'STUDENT';
-            } else {
-                // Fallbacks for teacher/admin: try User by email, then by id (if numeric)
-                user = await prisma.user.findUnique({ where: { email: username } });
-                if (!user) {
-                    const numericId = parseInt(username, 10);
-                    if (!isNaN(numericId)) {
-                        user = await prisma.user.findUnique({ where: { id: numericId } });
-                    }
-                }
-            }
-        }
+        // 2. Try to find the user in the Student table first
+        user = await prisma.student.findUnique({ 
+            where: { email: email } 
+        });
 
+        // 3. If not found in Student, check the User table (for Teachers/Admins)
         if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials or user not found.' });
+            user = await prisma.user.findUnique({ 
+                where: { email: email } 
+            });
+            
+            // If found in the User table, grab their specific role
+            if (user) {
+                role = user.role; 
+            }
         }
 
+        // 4. If neither table has this email, return error
+        if (!user) {
+            return res.status(401).json({ message: 'Invalid credentials. User not found.' });
+        }
+
+        // 5. Ensure the user actually has a password field set
         if (!user.password) {
             return res.status(401).json({ message: 'User has no password set.' });
         }
 
+        // 6. Verify password
         const isPasswordValid = await comparePassword(password, user.password);
 
         if (!isPasswordValid) {
             return res.status(401).json({ message: 'Invalid credentials. Incorrect password.' });
         }
 
-        // Ensure a role exists (students are assigned above)
-        const role = user.role || 'STUDENT';
-
+        // 7. Generate JWT Token
         const token = generateToken(user.id, role);
 
-        // Set cookie secure only in production; allow local dev/testing otherwise
+        // 8. Set cookie options
         const cookieOptions = {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',
         };
 
+        // 9. Send success response
         res.status(200)
             .cookie('token', token, cookieOptions)
             .json({
@@ -205,7 +202,7 @@ const login = async (req, res) => {
                     id: user.id,
                     fullName: user.fullName,
                     email: user.email,
-                    role,
+                    role, // Dynamically set to 'STUDENT', 'TEACHER', or 'ADMIN'
                 },
             });
 
