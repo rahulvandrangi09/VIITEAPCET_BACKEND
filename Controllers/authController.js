@@ -83,7 +83,6 @@ const registerStudent = async (req, res) => {
     try {
         const newStudent = await prisma.student.create({
             data: {
-                studentId: studentId,
                 password: hashedPassword,
                 fullName,
                 fatherName,
@@ -118,7 +117,7 @@ const registerStudent = async (req, res) => {
             message: 'Registration successful. Check your email for login details.', 
             student: { 
                 id: newStudent.id, 
-                studentId: newStudent.studentId,
+                // studentId: newStudent.studentId,
                 email: newStudent.email
             }
         });
