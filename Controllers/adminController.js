@@ -1,12 +1,13 @@
-// controllers/adminController.js
 const prisma = require('../utils/prisma');
 const { sendMail, createResultMail, createRegistrationMail, createResultMailWithVoucher } = require('../utils/mail');
 const { Subject, Difficulty } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
 const csv = require('csv-parser');
+const ExcelJS = require('exceljs');
 const { hashPassword, comparePassword } = require('./authController');
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;
+const { IST_OFFSET_MS } = require('../utils/ist');
 
 
 
@@ -18,7 +19,7 @@ const getFilePath = (imageKey, uploadedFiles) => {
     if (!imageKey) return null;
     const file = uploadedFiles.find(f => f.fieldname === imageKey);
     // Returns a path like: /uploads/1700000000000-image.png
-    return file ? path.join('/uploads', file.filename) : null; 
+    return file ? path.join('/uploads', file.filename) : null;
 };
 
 // Small helper to decode basic HTML entities back to characters/tags
@@ -59,7 +60,7 @@ const generateCustomQuestionPaper = async (req, res) => {
         const allQuestions = await prisma.question.findMany({
             select: { id: true, subject: true, difficulty: true, topic: true }
         });
-
+        console.log();
         // 2. Map questions: [Subject][Difficulty][Topic] -> [Array of IDs]
         const availabilityMap = {};
         allQuestions.forEach(q => {
@@ -70,14 +71,14 @@ const generateCustomQuestionPaper = async (req, res) => {
             }
             availabilityMap[q.subject][q.difficulty][q.topic].push(q.id);
         });
-
+        console.log(availabilityMap);
         let allSelectedQuestions = [];
         let totalQuestionsCount = 0;
         const subjectBreakdown = {};
 
         // 3. Iterate through the distribution (MATHEMATICS, PHYSICS, etc.)
         for (const subjectKey in distribution) {
-            const difficulties = distribution[subjectKey]; 
+            const difficulties = distribution[subjectKey];
             subjectBreakdown[subjectKey] = { total: 0, topics: {} };
 
             for (const diffKey in difficulties) {
@@ -89,38 +90,68 @@ const generateCustomQuestionPaper = async (req, res) => {
                 const topicNames = Object.keys(topicsMap);
 
                 if (topicNames.length === 0) {
-                    return res.status(400).json({ 
-                        message: `No questions found for ${subjectKey} with difficulty ${diffKey}.` 
+                    return res.status(400).json({
+                        message: `No questions found for ${subjectKey} with difficulty ${diffKey}.`
                     });
                 }
 
                 // --- BALANCING LOGIC ---
+                // First ensure total availability for this Subject+Difficulty
+                const totalAvailableForDiff = Object.values(topicsMap).reduce((s, arr) => s + arr.length, 0);
+                if (totalAvailableForDiff < targetCount) {
+                    return res.status(400).json({
+                        message: `Insufficient total questions for ${subjectKey} ${diffKey}. Needed: ${targetCount}, Available: ${totalAvailableForDiff}.`
+                    });
+                }
+
+                // Compute base allocation per topic, take all if a topic has less than base.
                 const numTopics = topicNames.length;
                 const basePerTopic = Math.floor(targetCount / numTopics);
-                let remainder = targetCount % numTopics;
+                let remainingNeeded = targetCount;
 
-                // Shuffle topics so the "extra" questions from the remainder aren't always given to the same topics
-                const shuffledTopicNames = shuffleArray([...topicNames]);
+                const perTopicTake = {};
+                // Initial allocation: give each topic up to basePerTopic (or all available if fewer)
+                for (const topicName of topicNames) {
+                    const availableIds = topicsMap[topicName] || [];
+                    const alloc = Math.min(basePerTopic, availableIds.length);
+                    perTopicTake[topicName] = alloc;
+                    remainingNeeded -= alloc;
+                }
 
-                for (const topicName of shuffledTopicNames) {
-                    let countToTake = basePerTopic + (remainder > 0 ? 1 : 0);
-                    if (remainder > 0) remainder--;
+                // If we still need more, distribute remainingNeeded from topics that have spare capacity
+                if (remainingNeeded > 0) {
+                    // Sort topics by spare capacity descending so larger pools contribute first
+                    const topicsBySpare = [...topicNames].sort((a, b) => (topicsMap[b].length - perTopicTake[b]) - (topicsMap[a].length - perTopicTake[a]));
+
+                    for (const topicName of topicsBySpare) {
+                        if (remainingNeeded <= 0) break;
+                        const spare = topicsMap[topicName].length - perTopicTake[topicName];
+                        if (spare <= 0) continue;
+                        const take = Math.min(spare, remainingNeeded);
+                        perTopicTake[topicName] += take;
+                        remainingNeeded -= take;
+                    }
+                }
+
+                // At this point remainingNeeded should be zero because we checked total availability earlier
+                if (remainingNeeded > 0) {
+                    return res.status(400).json({
+                        message: `Unable to allocate ${targetCount} questions for ${subjectKey} ${diffKey} after redistribution.`
+                    });
+                }
+
+                // Now pick the allocated number of questions from each topic
+                for (const topicName of shuffleArray([...topicNames])) {
+                    const countToTake = perTopicTake[topicName] || 0;
+                    if (countToTake === 0) continue;
 
                     const availableIds = topicsMap[topicName];
-
-                    if (availableIds.length < countToTake) {
-                        return res.status(400).json({
-                            message: `Insufficient questions in "${topicName}" (${subjectKey} ${diffKey}). Needed: ${countToTake}, Available: ${availableIds.length}.`
-                        });
-                    }
-
-                    // Pick random questions from this topic
                     const selected = shuffleArray([...availableIds]).slice(0, countToTake);
-                    
+
                     selected.forEach(id => {
                         allSelectedQuestions.push({ id });
                         totalQuestionsCount++;
-                        
+
                         // Update breakdown for the response
                         if (!subjectBreakdown[subjectKey].topics[topicName]) {
                             subjectBreakdown[subjectKey].topics[topicName] = 0;
@@ -142,7 +173,7 @@ const generateCustomQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: parseInt(durationHours) || 3,
-                startTime: new Date(startTime),
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : null,
                 totalMarks: totalQuestionsCount,
                 paperQuestions: {
                     create: allSelectedQuestions.map(q => ({ questionId: q.id }))
@@ -161,8 +192,7 @@ const generateCustomQuestionPaper = async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Internal server error.' });
     }
-}; 
-
+};
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -173,14 +203,14 @@ function shuffleArray(array) {
 
 const previewQuestionPaper = async (req, res) => {
     const { paperId } = req.params;
-    
+
     try {
         const paper = await prisma.questionPaper.findUnique({
             where: { id: parseInt(paperId) },
             include: {
                 paperQuestions: {
                     include: {
-                        question: true 
+                        question: true
                     }
                 }
             }
@@ -196,7 +226,7 @@ const previewQuestionPaper = async (req, res) => {
             .map(pq => {
                 const q = pq.question;
                 // Option image fields are stored as optionAImageUrl, optionBImageUrl, ...
-                const optionImageFields = ['optionAImageUrl','optionBImageUrl','optionCImageUrl','optionDImageUrl'];
+                const optionImageFields = ['optionAImageUrl', 'optionBImageUrl', 'optionCImageUrl', 'optionDImageUrl'];
 
                 // Build options with possible images
                 const options = (q.options || []).map((opt, idx) => {
@@ -243,7 +273,7 @@ const previewQuestionPaper = async (req, res) => {
                     questionImage
                 };
             })
-            .sort((a, b) => a.id - b.id); 
+            .sort((a, b) => a.id - b.id);
 
         res.status(200).json({
             title: paper.title,
@@ -259,7 +289,7 @@ const previewQuestionPaper = async (req, res) => {
 const saveQuestionsToDb = async (req, res) => {
     if (!req.body.questions) {
         if (req.files) {
-             req.files.forEach(file => fs.unlinkSync(file.path));
+            req.files.forEach(file => fs.unlinkSync(file.path));
         }
         return res.status(400).json({ message: "No questions payload found in request body. Upload failed." });
     }
@@ -270,29 +300,36 @@ const saveQuestionsToDb = async (req, res) => {
     try {
         const questionsPayload = JSON.parse(req.body.questions);
         for (const q of questionsPayload) {
-            const subject = q.subject; 
-            const difficulty = q.difficulty;
-            const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD];
+            // Trim incoming string fields to remove leading/trailing whitespace
+            const subject = typeof q.subject === 'string' ? q.subject.trim() : q.subject;
+            const difficulty = typeof q.difficulty === 'string' ? q.difficulty.trim() : q.difficulty;
+            const optionsArray = [q.optionA, q.optionB, q.optionC, q.optionD]
+                .map(o => (typeof o === 'string' ? o.trim() : o))
+                .filter(o => o !== undefined && o !== null && String(o) !== '');
+            const text = typeof q.question === 'string' ? q.question.trim() : q.question;
+            const correctAnswer = typeof q.answer === 'string' ? q.answer.trim() : q.answer;
+            const topic = typeof q.topic === 'string' ? q.topic.trim() : q.topic;
+
             questionsToSave.push({
-                text: q.question, 
-                options: optionsArray, 
-                correctAnswer: q.answer, // e.g., "Option A"
-                uploadedById: DEFAULT_UPLOADER_ID, 
-                topic: q.topic,
+                text: text,
+                options: optionsArray,
+                correctAnswer: correctAnswer, // e.g., "Option A"
+                uploadedById: DEFAULT_UPLOADER_ID,
+                topic: topic,
                 subject: subject,
                 difficulty: difficulty,
-                questionImageUrl: getFilePath(q.questionImageKey, uploadedFiles),
-                optionAImageUrl: getFilePath(q.optionAImageKey, uploadedFiles),
-                optionBImageUrl: getFilePath(q.optionBImageKey, uploadedFiles),
-                optionCImageUrl: getFilePath(q.optionCImageKey, uploadedFiles),
-                optionDImageUrl: getFilePath(q.optionDImageKey, uploadedFiles),
+                questionImageUrl: getFilePath(q.questionImageKey && q.questionImageKey.trim ? q.questionImageKey.trim() : q.questionImageKey, uploadedFiles),
+                optionAImageUrl: getFilePath(q.optionAImageKey && q.optionAImageKey.trim ? q.optionAImageKey.trim() : q.optionAImageKey, uploadedFiles),
+                optionBImageUrl: getFilePath(q.optionBImageKey && q.optionBImageKey.trim ? q.optionBImageKey.trim() : q.optionBImageKey, uploadedFiles),
+                optionCImageUrl: getFilePath(q.optionCImageKey && q.optionCImageKey.trim ? q.optionCImageKey.trim() : q.optionCImageKey, uploadedFiles),
+                optionDImageUrl: getFilePath(q.optionDImageKey && q.optionDImageKey.trim ? q.optionDImageKey.trim() : q.optionDImageKey, uploadedFiles),
             });
         }
 
         if (questionsToSave.length === 0) {
             // Clean up files if no valid questions were parsed
             if (uploadedFiles.length > 0) {
-                 uploadedFiles.forEach(file => fs.unlinkSync(file.path));
+                uploadedFiles.forEach(file => fs.unlinkSync(file.path));
             }
             return res.status(400).json({ message: "No valid questions were processed to save." });
         }
@@ -323,27 +360,28 @@ const saveQuestionsToDb = async (req, res) => {
     }
 };
 
-const totalQuestions = async(req,res) => {
+
+const totalQuestions = async (req, res) => {
     try {
         const data = await prisma.Question.findMany();
         console.log(data);
-    } catch(error) {
+    } catch (error) {
         console.error(error);
     }
 }
 
 // --- CORE ADMIN FUNCTION: Generate a balanced question paper ---
 const generateQuestionPaper = async (req, res) => {
-    const { adminId, title, startTime } = req.body;    
-    
+    const { adminId, title, startTime } = req.body;
+
     // Validate required fields
     if (!adminId || !title || !startTime) {
         return res.status(400).json({ message: 'Admin ID, title, and start time are required.' });
     }
 
     const DEFAULT_DISTRIBUTION = {
-        EASY: 0.30, 
-        MEDIUM: 0.40, 
+        EASY: 0.30,
+        MEDIUM: 0.40,
         HARD: 0.30
     };
 
@@ -360,20 +398,20 @@ const generateQuestionPaper = async (req, res) => {
             const subject = Subject[subjectKey];
             const targetCount = TARGET_QUESTIONS[subjectKey];
             let selectedSubjectQuestions = [];
-            
+
             // Iterate over difficulty levels
             const difficulties = [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD];
-            
+
             for (let i = 0; i < difficulties.length; i++) {
                 const diffKey = difficulties[i];
-                
+
                 let diffTargetCount = Math.round(targetCount * DEFAULT_DISTRIBUTION[diffKey]);
-                
+
                 // Adjustment for the last difficulty (HARD) to ensure total count is met
                 if (i === difficulties.length - 1) {
                     diffTargetCount = targetCount - selectedSubjectQuestions.length;
                 }
-                
+
                 if (diffTargetCount <= 0) continue;
 
                 const availableQuestions = await prisma.question.findMany({
@@ -397,7 +435,7 @@ const generateQuestionPaper = async (req, res) => {
         }
 
         if (allSelectedQuestions.length === 0) {
-             return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
+            return res.status(404).json({ message: 'Could not find any questions to create the paper.' });
         }
 
         // Final shuffle to randomize all questions across subjects
@@ -411,7 +449,7 @@ const generateQuestionPaper = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId),
                 durationHours: 3,
-                startTime: new Date(startTime),
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : null,
                 totalMarks: 160,
                 isActive: true,
                 paperQuestions: {
@@ -449,7 +487,7 @@ const answerMap = {
 // --- NEW FUNCTION: Get Top 10 Students for a Paper ---
 const getTopStudents = async (req, res) => {
     const { paperId } = req.params;
-    
+
     if (!paperId) {
         return res.status(400).json({ message: 'Paper ID is required.' });
     }
@@ -496,7 +534,7 @@ const getTopStudents = async (req, res) => {
 // --- CORE ADMIN FUNCTION: Send Mass Results Mails with Optional Vouchers ---
 const sendResultsMails = async (req, res) => {
     const { paperId, vouchers } = req.body;
-    
+
     if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
 
     try {
@@ -505,8 +543,8 @@ const sendResultsMails = async (req, res) => {
             include: {
                 examAttempts: {
                     where: { isCompleted: true },
-                    include: { 
-                        student: true, 
+                    include: {
+                        student: true,
                         result: true // This contains the subject-wise analysisJson
                     },
                     orderBy: {
@@ -570,8 +608,14 @@ const sendResultsMails = async (req, res) => {
             }
         }
 
-        res.status(200).json({ 
-            message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.` 
+        // Update paper to mark mailSent as true
+        await prisma.questionPaper.update({
+            where: { id: parseInt(paperId) },
+            data: { mailSent: true }
+        });
+
+        res.status(200).json({
+            message: `Successfully sent results to ${emailsSent} students. ${vouchersSent} students received voucher codes.`
         });
 
     } catch (error) {
@@ -583,8 +627,12 @@ const sendResultsMails = async (req, res) => {
 const uploadQuestions = async (req, res) => {
     const file = req.file;
     // Teacher ID, Subject, and Difficulty are expected in the multipart form data body
-    const { teacherId, subject, difficulty } = req.body; 
-    
+    let { teacherId, subject, difficulty } = req.body;
+    // Trim basic form fields
+    teacherId = teacherId && teacherId.toString().trim();
+    subject = subject && subject.toString().trim();
+    difficulty = difficulty && difficulty.toString().trim();
+
     if (!file || !teacherId || !subject || !difficulty) {
         // Clean up the temporary file if it exists and we have an error
         if (file) fs.unlinkSync(file.path);
@@ -622,13 +670,16 @@ const uploadQuestions = async (req, res) => {
                 if (data.text && Subject[subject.toUpperCase()] && Difficulty[difficulty.toUpperCase()]) {
                     try {
                         const options = [data.optionA, data.optionB, data.optionC, data.optionD]
-                            .filter(o => o && o.trim() !== ''); // Filter out empty options
+                            .map(o => (typeof o === 'string' ? o.trim() : o))
+                            .filter(o => o && o !== ''); // Filter out empty options
+                        const text = typeof data.text === 'string' ? data.text.trim() : data.text;
+                        const correctAnswer = (typeof data.correctAnswer === 'string' ? data.correctAnswer.trim() : (options[0] || ''));
                         questionsToCreate.push({
-                            text: data.text,
+                            text: text,
                             options: options,
-                            correctAnswer: options[0],
-                            subject: Subject[subject.toUpperCase()], 
-                            difficulty: Difficulty[difficulty.toUpperCase()], 
+                            correctAnswer: correctAnswer,
+                            subject: Subject[subject.toUpperCase()],
+                            difficulty: Difficulty[difficulty.toUpperCase()],
                             uploadedById: parseInt(teacherId),
                         });
                         console.log(options[0]);
@@ -660,10 +711,10 @@ const uploadQuestions = async (req, res) => {
         });
 
         // 4. Send success response
-        res.status(201).json({ 
-            message: `Processed ${totalProcessed} rows. Successfully added ${result.count} questions to the database.`, 
+        res.status(201).json({
+            message: `Processed ${totalProcessed} rows. Successfully added ${result.count} questions to the database.`,
             totalProcessed: totalProcessed,
-            totalAdded: result.count 
+            totalAdded: result.count
         });
 
     } catch (error) {
@@ -708,12 +759,12 @@ const registerTeacher = async (req, res) => {
         const newTeacher = await prisma.user.create({
             data: {
                 fullName,
-                email:studentId,
+                email: studentId,
                 password: hashedPassword,
                 role: 'TEACHER',
             },
         });
-        
+
         /*
             Live monitoring.
             Reports 
@@ -749,11 +800,11 @@ const registerTeacher = async (req, res) => {
 // 🚨 NEW FUNCTION: Admin Password Change
 const changeAdminPassword = async (req, res) => {
     // 🚨 CRITICAL CHANGE: Get the user ID from the verified JWT token
-    const userId = req.user.id; 
-    
+    const userId = req.user.id;
+
     const { currentPassword, newPassword } = req.body;
     // We no longer need studentId from the body since the token identifies the user
-    
+
     if (!currentPassword || !newPassword) {
         return res.status(400).json({ message: 'Current and new password are required.' });
     }
@@ -768,10 +819,10 @@ const changeAdminPassword = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'User not found.' });
         }
-        
+
         // 2. Compare current password with stored hash
         const isMatch = await comparePassword(currentPassword, user.password);
-        
+
         if (!isMatch) {
             return res.status(401).json({ message: 'Incorrect current password.' });
         }
@@ -794,38 +845,40 @@ const changeAdminPassword = async (req, res) => {
 
 // --- NEW ADMIN FUNCTION: Get Admin Stats ---
 const getAdminStats = async (req, res) => {
+    const myDate = new Date(Date.now());
+    console.log(myDate);
     try {
-        // Total number of students
+        
         const totalStudents = await prisma.student.count();
 
-        const now = new Date();
-        // Calculate the maximum end time for the start window that is still valid.
-        // A paper must end its 15-minute grace period AFTER the current time.
-        // Paper.startTime + 15 mins > Now
+        const now = new Date(Date.now());
+        
         const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS);
 
 
         // Fetch only papers that are active AND whose 15-minute start window has not expired
         const upcomingExams = await prisma.questionPaper.findMany({
-            where: { 
-                isActive: true, 
+            where: {
+                isActive: true,
                 // 🚨 NEW FILTER: startTime must be greater than (Now - 15 minutes)
                 startTime: {
-                    gt: minStartTime, 
+                    gt: minStartTime,
                 },
-            }, 
-            select: { 
-                id: true, 
-                title: true, 
-                durationHours: true, 
+            },
+            select: {
+                id: true,
+                title: true,
+                durationHours: true,
                 totalMarks: true,
                 createdAt: true,
                 // 🚨 CRITICAL ADDITION
-                startTime: true, 
+                startTime: true,
+                // 🚨 NEW: Include accessCode for frontend display
+                accessCode: true,
             },
             // 🚨 NEW SORTING: Nearest upcoming first
             orderBy: {
-                startTime: 'asc', 
+                startTime: 'asc',
             }
         });
 
@@ -852,9 +905,8 @@ const getExamStats = async (req, res) => {
     try {
         const totalStudents = await prisma.student.count();
 
-        const now = new Date();
-
-        // Find ongoing exam: active, now >= startTime, now <= startTime + durationHours
+        const now = new Date(Date.now());
+    
         const ongoingExam = await prisma.questionPaper.findFirst({
             where: {
                 isActive: true,
@@ -873,13 +925,16 @@ const getExamStats = async (req, res) => {
                 totalMarks: true
             }
         });
-
+        // Adjust stored UTC startTime to IST (+05:30)
+        if (ongoingExam && ongoingExam.startTime) {
+            ongoingExam.startTime = new Date(new Date(ongoingExam.startTime).getTime() + IST_OFFSET_MS);
+        }
         if (!ongoingExam) {
             // Find the most recent exam that has been attempted
             const previousExam = await prisma.questionPaper.findFirst({
                 where: {
                     examAttempts: {
-                        some: {} // has at least one attempt
+                        some: {} 
                     }
                 },
                 orderBy: {
@@ -895,7 +950,6 @@ const getExamStats = async (req, res) => {
             });
 
             if (previousExam) {
-                // Get top rankers for the previous exam
                 const topRankers = await prisma.examAttempt.findMany({
                     where: {
                         paperId: previousExam.id,
@@ -941,6 +995,7 @@ const getExamStats = async (req, res) => {
 
         if (now > examEndTime) {
             // Exam ended, fetch top rankers for the completed exam
+            console.log("now : ",now, "examEndTime: ", examEndTime);
             const topRankers = await prisma.examAttempt.findMany({
                 where: {
                     paperId: ongoingExam.id,
@@ -964,6 +1019,7 @@ const getExamStats = async (req, res) => {
                 score: r.score
             }));
 
+
             return res.status(200).json({
                 message: 'Exam has ended. Showing final results.',
                 totalStudents,
@@ -979,6 +1035,8 @@ const getExamStats = async (req, res) => {
                 isAttemptingExam: true
             }
         });
+
+        console.log(attemptingCount);
 
         // Top 5 rankers: from ExamAttempt where paperId=ongoingExam.id, isCompleted=true, order by score desc, limit 5, include student.fullName
         const topRankers = await prisma.examAttempt.findMany({
@@ -1003,7 +1061,7 @@ const getExamStats = async (req, res) => {
             name: r.student.fullName,
             score: r.score
         }));
-        console.log(ongoingExam,rankers,attemptingCount,totalStudents);
+        console.log(ongoingExam, rankers, attemptingCount, totalStudents);
         res.status(200).json({
             message: 'Exam is currently ongoing.',
             totalStudents,
@@ -1034,9 +1092,9 @@ const getReports = async (req, res) => {
                     }
                 },
                 _count: {
-                    select: { 
+                    select: {
                         examAttempts: true, // This gives total "attempted" count
-                        paperQuestions: true 
+                        paperQuestions: true
                     }
                 },
                 paperQuestions: {
@@ -1055,11 +1113,11 @@ const getReports = async (req, res) => {
             const completedAttempts = paper.examAttempts;
             const completedCount = completedAttempts.length;
             const attemptedCount = paper._count.examAttempts;
-            
+
             // Calculate average score
             const totalScore = completedAttempts.reduce((sum, a) => sum + (a.score || 0), 0);
             const avgScore = completedCount > 0 ? (totalScore / completedCount).toFixed(1) : "0";
-            
+
             // Subject Analytics
             const subjectStats = {
                 PHYSICS: { score: 0, count: 0, totalQuestions: 0 },
@@ -1102,6 +1160,7 @@ const getReports = async (req, res) => {
                 startDate: paper.startTime,
                 totalMarks: paper.totalMarks,
                 status: paper.isActive ? 'Active' : 'Complete',
+                mailSent: paper.mailSent,
                 feedback: (completedCount > 0 ? (parseFloat(avgScore) / paper.totalMarks) * 10 : 0).toFixed(1),
                 registered: registeredForExam,
                 attempted: attemptedCount,
@@ -1145,7 +1204,7 @@ const getQuestionCounts = async (req, res) => {
             if (!topicCounts[subj]) topicCounts[subj] = {};
             topicCounts[subj][topic] = r._count._all;
         });
-        res.status(200).json({topicCounts });
+        res.status(200).json({ topicCounts });
     } catch (error) {
         console.error('getQuestionCounts Error:', error);
         res.status(500).json({ message: 'Internal server error while fetching question counts.' });
@@ -1187,6 +1246,91 @@ const getDifficultyAvailability = async (req, res) => {
     }
 };
 
+// --- NEW: Export paper results as Excel ---
+const exportResultsExcel = async (req, res) => {
+    const { paperId } = req.params;
+    if (!paperId) return res.status(400).json({ message: 'Paper ID is required.' });
+
+    try {
+        const paper = await prisma.questionPaper.findUnique({
+            where: { id: parseInt(paperId) },
+            include: {
+                examAttempts: {
+                    where: { isCompleted: true },
+                    include: {
+                        student: {
+                            select: { fullName: true, email: true, mobileNumber: true }
+                        },
+                        result: true
+                    },
+                    orderBy: { score: 'desc' }
+                }
+            }
+        });
+
+        if (!paper || !paper.examAttempts || paper.examAttempts.length === 0) {
+            return res.status(404).json({ message: 'No completed attempts found for this paper.' });
+        }
+
+        // Create workbook and worksheet
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Results');
+
+        // Define header row
+        const headers = [
+            { header: 'Rank', key: 'rank', width: 6 },
+            { header: 'Name', key: 'name', width: 30 },
+            { header: 'Phone', key: 'phone', width: 15 },
+            { header: 'Email', key: 'email', width: 30 },
+            { header: 'PHYSICS', key: 'physics', width: 12 },
+            { header: 'CHEMISTRY', key: 'chemistry', width: 12 },
+            { header: 'MATHEMATICS', key: 'mathematics', width: 12 },
+            { header: 'Total Score', key: 'total', width: 12 }
+        ];
+
+        worksheet.columns = headers;
+
+        // Fill rows
+        const attempts = paper.examAttempts.sort((a, b) => (b.score || 0) - (a.score || 0));
+        for (let i = 0; i < attempts.length; i++) {
+            const attempt = attempts[i];
+            const student = attempt.student || {};
+            const analysis = attempt.result?.analysisJson || {};
+
+            const getSubScore = (sub) => {
+                // support both uppercase and lowercase keys
+                const entry = analysis[sub] || analysis[sub.toLowerCase()] || {};
+                return entry.score != null ? entry.score : 0;
+            };
+
+            worksheet.addRow({
+                rank: i + 1,
+                name: student.fullName || '',
+                phone: student.mobileNumber || '',
+                email: student.email || '',
+                physics: getSubScore('PHYSICS'),
+                chemistry: getSubScore('CHEMISTRY'),
+                mathematics: getSubScore('MATHEMATICS'),
+                total: attempt.score || (attempt.result?.totalScore || 0)
+            });
+        }
+
+        // Style header row
+        worksheet.getRow(1).font = { bold: true };
+
+        // Set response headers and stream workbook
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=results_${paperId}.xlsx`);
+
+        await workbook.xlsx.write(res);
+        res.end();
+
+    } catch (error) {
+        console.error('Export Results Excel Error:', error);
+        res.status(500).json({ message: 'Failed to export results.' });
+    }
+};
+
 
 // --- NEW ADMIN FUNCTION: Get difficulty stats for a specific exam ---
 const getDifficultyStats = async (req, res) => {
@@ -1197,9 +1341,9 @@ const getDifficultyStats = async (req, res) => {
         const parsedExamId = parseInt(examId);
 
         if (isNaN(parsedExamId)) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Invalid exam ID provided.' 
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid exam ID provided.'
             });
         }
 
@@ -1210,9 +1354,9 @@ const getDifficultyStats = async (req, res) => {
         });
 
         if (!exam) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Exam not found.' 
+            return res.status(404).json({
+                success: false,
+                message: 'Exam not found.'
             });
         }
 
@@ -1253,9 +1397,9 @@ const getDifficultyStats = async (req, res) => {
 
     } catch (error) {
         console.error('Get Difficulty Stats Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Internal server error while fetching difficulty stats.' 
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error while fetching difficulty stats.'
         });
     }
 };
@@ -1267,18 +1411,18 @@ const generateCustomExam = async (req, res) => {
     try {
         // Validate input
         if (!title || !slots || !Array.isArray(slots) || slots.length === 0) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Invalid request. Title and slots array are required.' 
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid request. Title and slots array are required.'
             });
         }
 
         // Validate each slot has a difficulty field
         for (const slot of slots) {
             if (!slot.difficulty || !['EASY', 'MEDIUM', 'HARD'].includes(slot.difficulty.toUpperCase())) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Invalid difficulty in slot. Must be EASY, MEDIUM, or HARD.` 
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid difficulty in slot. Must be EASY, MEDIUM, or HARD.`
                 });
             }
         }
@@ -1309,9 +1453,9 @@ const generateCustomExam = async (req, res) => {
             });
 
             if (questions.length < difficultyCount[difficulty]) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: `Insufficient questions for difficulty ${difficulty}. Needed: ${difficultyCount[difficulty]}, Available: ${questions.length}` 
+                return res.status(400).json({
+                    success: false,
+                    message: `Insufficient questions for difficulty ${difficulty}. Needed: ${difficultyCount[difficulty]}, Available: ${questions.length}`
                 });
             }
 
@@ -1327,13 +1471,13 @@ const generateCustomExam = async (req, res) => {
         slots.forEach((slot, index) => {
             const difficulty = slot.difficulty.toUpperCase();
             const pool = questionPools[difficulty];
-            
+
             // Pick the next unused question from this difficulty's shuffled pool
             let question = null;
             while (poolIndexes[difficulty] < pool.length) {
                 const candidate = pool[poolIndexes[difficulty]];
                 poolIndexes[difficulty]++;
-                
+
                 if (!usedQuestionIds.has(candidate.id)) {
                     question = candidate;
                     usedQuestionIds.add(candidate.id);
@@ -1356,7 +1500,7 @@ const generateCustomExam = async (req, res) => {
                 accessCode,
                 createdById: parseInt(adminId) || DEFAULT_UPLOADER_ID,
                 durationHours: parseInt(durationHours) || 3,
-                startTime: startTime ? new Date(startTime) : new Date(),
+                startTime: startTime ? new Date(new Date(startTime).getTime()) : new Date(Date.now()),
                 totalMarks: selectedQuestions.length,
                 isActive: false, // Set to false by default for custom exams
                 paperQuestions: {
@@ -1375,9 +1519,9 @@ const generateCustomExam = async (req, res) => {
 
     } catch (error) {
         console.error('Generate Custom Exam Error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Internal server error while generating custom exam.' 
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error while generating custom exam.'
         });
     }
 };
@@ -1396,10 +1540,11 @@ module.exports = {
     getExamStats,
     getReports,
     getTopStudents,
+    exportResultsExcel,
     totalQuestions,
     getDifficultyStats,
     generateCustomExam,
     getDifficultyAvailability
 };
 
-// --- NEW ADMIN FUNCTION: Get question counts grouped by subject and topic ---
+// --- NEW ADMIN FUNCTION: Get question counts grouped by subject and topic ---```
