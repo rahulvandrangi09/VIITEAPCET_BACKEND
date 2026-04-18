@@ -1,43 +1,82 @@
-const nodemailer = require('nodemailer');
-require('dotenv').config(); 
-const transporter = nodemailer.createTransport({
-    host: process.env.MAIL_SMTP_HOST,
-    port: Number(process.env.MAIL_SMTP_PORT),
-    secure: false, // true only for 465
-    auth: {
-        user: process.env.MAIL_SMTP_USER,
-        pass: process.env.MAIL_SMTP_PASS,
-    },
-    tls: {
-        rejectUnauthorized: false,
-    },
+const { google } = require("googleapis");
+require("dotenv").config();
+
+const OAuth2 = google.auth.OAuth2;
+
+// ================= OAUTH2 SETUP =================
+
+const oauth2Client = new OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+);
+
+oauth2Client.setCredentials({
+    refresh_token: process.env.GMAIL_REFRESH_TOKEN,
 });
+
+// ================= CREATE GMAIL CLIENT =================
+
+const createGmailClient = async () => {
+    const accessToken = await oauth2Client.getAccessToken();
+
+    oauth2Client.setCredentials({
+        access_token: accessToken.token,
+    });
+
+    return google.gmail({
+        version: "v1",
+        auth: oauth2Client,
+    });
+};
+
+// ================= SEND MAIL FUNCTION =================
 
 const sendMail = async (to, subject, htmlContent) => {
     try {
-        const info = await transporter.sendMail({
-            from: process.env.MAIL_SENDER_EMAIL,
-            to,
-            subject,
-            html: htmlContent,
+        const gmail = await createGmailClient();
+
+        const message = [
+            `From: ${process.env.MAIL_SENDER_EMAIL}`,
+            `To: ${to}`,
+            `Subject: ${subject}`,
+            "MIME-Version: 1.0",
+            "Content-Type: text/html; charset=utf-8",
+            "",
+            htmlContent,
+        ].join("\n");
+
+        const encodedMessage = Buffer.from(message)
+            .toString("base64")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+
+        const response = await gmail.users.messages.send({
+            userId: "me",
+            requestBody: {
+                raw: encodedMessage,
+            },
         });
 
-        console.log("✅ Email sent:", info.messageId);
+        console.log("✅ Email sent:", response.data.id);
         return true;
 
     } catch (error) {
-        console.error("❌ SMTP Error:", error.message);
+        console.error(
+            "❌ Gmail REST API Error:",
+            error.response?.data || error.message
+        );
         return false;
     }
 };
 
+// ================= TEMPLATE FUNCTIONS (UNCHANGED) =================
 
-// 3. Email Content Creation Function (Registration)
 const createRegistrationMail = (fullName, studentId, rawPassword) => {
-    // Improved HTML template for better readability in actual email clients
     return `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee;">
-            <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIIT Mock Portal Registration Successful!</h2>
+            <h2 style="color: #003973; border-bottom: 2px solid #003973; padding-bottom: 10px;">VIITCET Portal Registration Successful!</h2>
             <p>Dear ${fullName},</p>
             <p>Congratulations! Your registration is successful. You can now log in to the student dashboard.</p>
             
@@ -61,19 +100,16 @@ const createRegistrationMail = (fullName, studentId, rawPassword) => {
     `;
 };
 
-// 5. Email Content Creation Function (Results with Voucher) - For Top 10 Students
 const createResultMailWithVoucher = (fullName, totalScore, totalMarks, analysis, voucherCode, rank) => {
     let weaknessHtml = '';
     const weakSubjects = [];
 
-    // 1. Create a "Safe" analysis object with defaults
     const safeAnalysis = {
         PHYSICS: analysis?.PHYSICS || { score: 0, total: 0 },
         CHEMISTRY: analysis?.CHEMISTRY || { score: 0, total: 0 },
         MATHEMATICS: analysis?.MATHEMATICS || analysis?.MATHS || { score: 0, total: 0 }
     };
 
-    // 2. Logic to build the improvement suggestions
     for (const subject in safeAnalysis) {
         const data = safeAnalysis[subject];
         if (data.total > 0 && data.score < (data.total / 2)) {
@@ -113,28 +149,23 @@ const createResultMailWithVoucher = (fullName, totalScore, totalMarks, analysis,
                 <p style="font-size: 12px; color: #666;">Use this code to redeem your Amazon voucher!</p>
             </div>
             
-            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIIT Mock Portal</p>
+            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIITCET Portal</p>
         </div>
     `;
 };
 
-// 4. Email Content Creation Function (Results) - Your original logic is maintained
 const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
     let weaknessHtml = '';
     const weakSubjects = [];
 
-    // 1. Create a "Safe" analysis object with defaults
-    // This prevents "Cannot read property 'score' of undefined"
     const safeAnalysis = {
         PHYSICS: analysis?.PHYSICS || { score: 0, total: 0 },
         CHEMISTRY: analysis?.CHEMISTRY || { score: 0, total: 0 },
         MATHEMATICS: analysis?.MATHEMATICS || analysis?.MATHS || { score: 0, total: 0 }
     };
 
-    // 2. Logic to build the improvement suggestions
     for (const subject in safeAnalysis) {
         const data = safeAnalysis[subject];
-        // Only suggest improvement if they actually had questions (total > 0)
         if (data.total > 0 && data.score < (data.total / 2)) {
             weakSubjects.push(subject);
             weaknessHtml += `<li><strong>${subject}:</strong> Score: ${data.score}/${data.total}</li>`;
@@ -163,15 +194,14 @@ const createResultMail = (fullName, totalScore, totalMarks, analysis) => {
 
             ${feedbackBox}
             
-            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIIT Mock Portal</p>
+            <p style="font-size: 12px; color: #777; margin-top: 30px;">Sent via VIITCET Portal</p>
         </div>
     `;
 };
-
 
 module.exports = {
     sendMail,
     createRegistrationMail,
     createResultMail,
-    createResultMailWithVoucher // 🚨 NEW EXPORT
+    createResultMailWithVoucher
 };
