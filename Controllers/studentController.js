@@ -1,6 +1,7 @@
 // controllers/studentController.js
 const { Subject } = require('@prisma/client');
 const prisma = require('../utils/prisma');
+const { IST_OFFSET_MS } = require('../utils/ist');
 
 // Constant for the 15-minute grace period (in milliseconds)
 const LATE_START_WINDOW_MS = 15 * 60 * 1000;
@@ -31,12 +32,12 @@ const sanitizeQuestion = (question) => {
 const getAvailableExams = async (req, res) => {
     
     try {
-        const now = new Date();
+        const now = new Date(Date.now());
         // Calculate the maximum end time for the start window that is still valid.
         // A paper must end its 15-minute grace period AFTER the current time.
         // Paper.startTime + 15 mins > Now
         const minStartTime = new Date(now.getTime() - LATE_START_WINDOW_MS);
-
+        console.log("now: ",now, "minStartTime: ",minStartTime);
 
         // Fetch only papers that are active AND whose 15-minute start window has not expired
         const availablePapers = await prisma.questionPaper.findMany({
@@ -86,7 +87,7 @@ const startExam = async (req, res) => {
     try {
         const parsedPaperId = parseInt(paperId);
         const parsedStudentId = parseInt(studentId);
-        const now = new Date();
+        const now = new Date(Date.now() + IST_OFFSET_MS);
 
         // Check if student exists
         const student = await prisma.student.findUnique({
@@ -95,6 +96,19 @@ const startExam = async (req, res) => {
 
         if (!student) {
             return res.status(404).json({ message: 'Student not found.' });
+        }
+
+        // Check if the student has already completed this exam
+        const completedAttempt = await prisma.examAttempt.findFirst({
+            where: {
+                studentId: parsedStudentId,
+                paperId: parsedPaperId,
+                isCompleted: true
+            }
+        });
+
+        if (completedAttempt) {
+            return res.status(403).json({ message: 'You have already completed this exam and cannot attempt it again.' });
         }
 
         // Update student's isAttemptingExam to true
@@ -153,11 +167,11 @@ const startExam = async (req, res) => {
         
         if (!attempt) {
             // 2. Create a new exam attempt if none exists
-            attempt = await prisma.examAttempt.create({
+            attempt = await prisma.examAttempt.create({
                 data: {
                     studentId: parsedStudentId,
                     paperId: parsedPaperId,
-                    startTime: new Date(), // Attempt start time is NOW
+                    startTime: new Date(Date.now() + IST_OFFSET_MS), // Attempt start time is NOW (IST)
                     isCompleted: false,
                 }
             });
@@ -175,8 +189,8 @@ const startExam = async (req, res) => {
         
         // Calculate initial remaining time (3 hours from attempt's start time)
         const durationInMilliseconds = paper.durationHours * 3600 * 1000;
-        const endTime = new Date(attempt.startTime.getTime() + durationInMilliseconds);
-        const timeRemaining = Math.max(0, Math.floor((endTime.getTime() - new Date().getTime()) / 1000));
+    const endTime = new Date(attempt.startTime.getTime() + durationInMilliseconds);
+    const timeRemaining = Math.max(0, Math.floor((endTime.getTime() - (Date.now() + IST_OFFSET_MS)) / 1000));
         console.log(isResuming ? 'Exam resumed successfully.' : 'Exam started successfully.');
 
         res.status(200).json({
@@ -227,7 +241,7 @@ const submitAttempt = async (req, res) => {
             data: {
                 // Prisma handles converting the JS object to JSON type in Postgres
                 answers: answers,
-                endTime: new Date(),
+                endTime: new Date(Date.now() + IST_OFFSET_MS),
                 isCompleted: true,
             }
         });
