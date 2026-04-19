@@ -5,6 +5,8 @@ const prisma = require('./utils/prisma');
 const multer = require('multer'); // <--- Multer for file uploads
 const path = require('path');     // <--- Path for file paths
 const fs = require('fs');
+// Ensure server uses IST (+05:30) for current-time calls across the app
+require('./utils/ist');
 const { protect, authorize } = require('./middleware/authMiddleware');
 // Initialize Controllers and Prisma
 const authController = require('./Controllers/authController');
@@ -15,6 +17,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 
 // --- Multer Configuration ---
 // Destination storage for uploaded CSV files
@@ -74,6 +77,7 @@ app.post('/api/auth/register', upload.single('photo'), authController.registerSt
 app.post('/api/auth/login', authController.login);
 app.post('/api/auth/change-password', adminController.changeAdminPassword);
 app.post('/api/admin/register-teacher', protect, authorize('ADMIN'), adminController.registerTeacher);
+
 // --- ADMIN ROUTES ---
 app.post('/api/admin/create-paper', protect, authorize('ADMIN'), adminController.generateQuestionPaper);
 app.post('/api/admin/send-results', protect, authorize('ADMIN'), adminController.sendResultsMails);
@@ -83,6 +87,7 @@ app.get('/api/admin/top-students/:paperId', protect, authorize('ADMIN'), adminCo
 app.get('/api/admin/stats', protect, authorize('ADMIN','TEACHER'), adminController.getAdminStats);
 app.get('/api/admin/exam-stats', protect, authorize('ADMIN', 'TEACHER'), adminController.getExamStats);
 app.get('/api/admin/reports', protect, authorize('ADMIN', 'TEACHER'), adminController.getReports);
+app.get('/api/admin/reports/:paperId/results', protect, authorize('ADMIN', 'TEACHER'), adminController.exportResultsExcel);
 app.get('/api/admin/total-questions', protect, authorize('ADMIN','TEACHER'), adminController.getQuestionCounts);
 app.get('/api/admin/difficulty-availability', protect, authorize('ADMIN','TEACHER'), adminController.getDifficultyAvailability);
 
